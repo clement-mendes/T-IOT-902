@@ -1,4 +1,4 @@
-name: ESP-IDF CI Receiver
+name: ESP-IDF CI Sender
 
 on:
   push:
@@ -19,4 +19,4 @@ jobs:
       with:
         esp_idf_version: v5.4
         target: esp32
-        path: 'Software_receiver'
+        path: 'Software_sender'
