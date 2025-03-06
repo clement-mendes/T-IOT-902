@@ -9,7 +9,7 @@ on:
       - 'dev'
 
 jobs:
-  build:
+  build_receiver:
     runs-on: ubuntu-latest
 
     steps:
