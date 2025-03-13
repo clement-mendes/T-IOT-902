@@ -75,10 +75,15 @@ jobs:
           echo "new_version=$new_version" >> $GITHUB_ENV
           echo "::set-output name=new_version::$new_version"
 
-      - name: Create Git tag and push
+      - name: Configure Git user
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
+
+      - name: Push new Git tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
           git tag -a "v${{ steps.bump_version.outputs.new_version }}" -m "Version ${{ steps.bump_version.outputs.new_version }}"
           git push origin "v${{ steps.bump_version.outputs.new_version }}"
 
