@@ -1,9 +1,6 @@
 name: ESP-IDF CI with Versioning
 
 on:
-  push:
-    branches:
-      - "*"
   pull_request:
     branches:
       - "main"
@@ -11,12 +8,6 @@ on:
       - opened
       - synchronize
       - reopened
-  workflow_dispatch:
-    inputs:
-      version_type:
-        description: 'Version Type (major, minor, patch)'
-        required: true
-        default: 'patch'
 
 jobs:
   versioning:
@@ -28,7 +19,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 
+          fetch-depth: 0  # Important pour récupérer tous les tags
 
       - name: Get latest version tag
         id: get_version
@@ -41,10 +32,32 @@ jobs:
           echo "🔹 Latest version: $latest_tag"
           echo "version=$latest_tag" >> $GITHUB_ENV
 
+      - name: Get PR Labels
+        id: pr_labels
+        run: |
+          pr_labels=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels \
+            | jq -r '.[].name')
+          echo "Labels: $pr_labels"
+
+          # Detect version type based on labels
+          if echo "$pr_labels" | grep -q "major"; then
+            version_type="major"
+          elif echo "$pr_labels" | grep -q "minor"; then
+            version_type="minor"
+          elif echo "$pr_labels" | grep -q "patch"; then
+            version_type="patch"
+          else
+            echo "❌ ERROR: No valid version label found! Please add a 'major', 'minor', or 'patch' label."
+            exit 1
+          fi
+
+          echo "version_type=$version_type" >> $GITHUB_ENV
+
       - name: Increment version
         id: bump_version
         run: |
-          echo "🔹 Selected version type: ${{ github.event.inputs.version_type }}"  
+          echo "🔹 Selected version type: ${{ env.version_type }}"  
 
           old_version="${{ env.version }}"
           echo "🔹 Old version: $old_version"
@@ -54,16 +67,8 @@ jobs:
             exit 1
           fi
 
-          # Remove leading 'v' if it exists to handle potential "vvv" prefixes
           clean_version="${old_version//v/}"
-          
           IFS='.' read -r -a parts <<< "$clean_version"
-          version_type="${{ github.event.inputs.version_type }}"
-
-          if [[ -z "$version_type" ]]; then
-            echo "❌ ERROR: version_type is empty!"
-            exit 1
-          fi
 
           case "$version_type" in
             major)
@@ -82,10 +87,7 @@ jobs:
           esac
 
           echo "✅ New version: $new_version"
-          
-          # Re-add the leading 'v'
           new_version="v${new_version}"
-          
           echo "new_version=$new_version" >> $GITHUB_ENV
           echo "::set-output name=new_version::$new_version"
 
@@ -95,11 +97,10 @@ jobs:
           git config --global user.email "actions@github.com"
 
       - name: Push new Git tag
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'pull_request' && github.event.action == 'closed'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Make sure the tag name has the correct format
           git tag -a "${{ steps.bump_version.outputs.new_version }}" -m "Version ${{ steps.bump_version.outputs.new_version }}"
           git push origin "${{ steps.bump_version.outputs.new_version }}"
 
