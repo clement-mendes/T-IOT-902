@@ -3,13 +3,13 @@ name: ESP32 CI with Versioning (Main)
 on:
   push:
     branches:
-      - '*'
+      - "*"
   workflow_dispatch:
     inputs:
       version_type:
-        description: 'Version Type (major, minor, patch)'
+        description: "Version Type (major, minor, patch)"
         required: true
-        default: 'patch'
+        default: "patch"
 
 jobs:
   versioning:
@@ -18,7 +18,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 
+          fetch-depth: 0
 
       - name: Get latest version
         id: get_version
@@ -31,30 +31,39 @@ jobs:
           echo "Latest version: $latest_tag"
           echo "version=$latest_tag" >> $GITHUB_ENV
 
-      - name: Increment version
-        id: bump_version
-        run: |
-          old_version=${{ env.version }}
-          IFS='.' read -r -a parts <<< "$old_version"
-          
-          case "${{ github.event.inputs.version_type }}" in
-            major)
-              new_version="$((parts[0] + 1)).0.0"
-              ;;
-            minor)
-              new_version="${parts[0]}.$((parts[1] + 1)).0"
-              ;;
-            patch)
-              new_version="${parts[0]}.${parts[1]}.$((parts[2] + 1))"
-              ;;
-            *)
-              echo "Invalid version type"
-              exit 1
-              ;;
-          esac
+          - name: Increment version
+          id: bump_version
+          run: |
+            echo "Selected version type: ${{ github.event.inputs.version_type }}"  # Debugging
 
-          echo "New version: $new_version"
-          echo "new_version=$new_version" >> $GITHUB_ENV
+            old_version=${{ env.version }}
+            IFS='.' read -r -a parts <<< "$old_version"
+
+            version_type="${{ github.event.inputs.version_type }}"
+            
+            if [[ -z "$version_type" ]]; then
+              echo "❌ ERROR: version_type is empty!"
+              exit 1
+            fi
+
+            case "$version_type" in
+              major)
+                new_version="$((parts[0] + 1)).0.0"
+                ;;
+              minor)
+                new_version="${parts[0]}.$((parts[1] + 1)).0"
+                ;;
+              patch)
+                new_version="${parts[0]}.${parts[1]}.$((parts[2] + 1))"
+                ;;
+              *)
+                echo "❌ ERROR: Invalid version type '$version_type'"
+                exit 1
+                ;;
+            esac
+
+            echo "✅ New version: $new_version"
+            echo "new_version=$new_version" >> $GITHUB_ENV
 
       - name: Create and push new tag (Only on push to main)
         if: github.event_name == 'push'
@@ -75,14 +84,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: 'recursive'
+          submodules: "recursive"
 
       - name: Build ESP32 firmware (Receiver)
         uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: v5.4
           target: esp32
-          path: 'Software_receiver'
+          path: "Software_receiver"
 
       - name: Rename firmware with version
         run: |
@@ -101,14 +110,14 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          submodules: 'recursive'
+          submodules: "recursive"
 
       - name: Build ESP32 firmware (Sender)
         uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: v5.4
           target: esp32
-          path: 'Software_sender'
+          path: "Software_sender"
 
       - name: Rename firmware with version
         run: |
