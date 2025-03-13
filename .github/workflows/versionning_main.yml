@@ -1,4 +1,4 @@
-name: ESP32 CI with Versioning (Main)
+name: ESP-IDF CI with Versioning
 
 on:
   push:
@@ -7,20 +7,23 @@ on:
   workflow_dispatch:
     inputs:
       version_type:
-        description: "Version Type (major, minor, patch)"
+        description: 'Version Type (major, minor, patch)'
         required: true
-        default: "patch"
+        default: 'patch'
 
 jobs:
   versioning:
     runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.bump_version.outputs.new_version }}
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0  # Important pour récupérer tous les tags
 
-      - name: Get latest version
+      - name: Get latest version tag
         id: get_version
         run: |
           git fetch --tags
@@ -28,103 +31,81 @@ jobs:
           if [[ -z "$latest_tag" ]]; then
             latest_tag="0.0.0"
           fi
-          echo "Latest version: $latest_tag"
+          echo "🔹 Latest version: $latest_tag"
           echo "version=$latest_tag" >> $GITHUB_ENV
 
-          - name: Increment version
-          id: bump_version
-          run: |
-            echo "Selected version type: ${{ github.event.inputs.version_type }}"  # Debugging
+      - name: Increment version
+        id: bump_version
+        run: |
+          echo "🔹 Selected version type: ${{ github.event.inputs.version_type }}"  
 
-            old_version=${{ env.version }}
-            IFS='.' read -r -a parts <<< "$old_version"
+          old_version="${{ env.version }}"
+          echo "🔹 Old version: $old_version"
 
-            version_type="${{ github.event.inputs.version_type }}"
-            
-            if [[ -z "$version_type" ]]; then
-              echo "❌ ERROR: version_type is empty!"
+          if [[ -z "$old_version" ]]; then
+            echo "❌ ERROR: No previous version found!"
+            exit 1
+          fi
+
+          IFS='.' read -r -a parts <<< "$old_version"
+          version_type="${{ github.event.inputs.version_type }}"
+
+          if [[ -z "$version_type" ]]; then
+            echo "❌ ERROR: version_type is empty!"
+            exit 1
+          fi
+
+          case "$version_type" in
+            major)
+              new_version="$((parts[0] + 1)).0.0"
+              ;;
+            minor)
+              new_version="${parts[0]}.$((parts[1] + 1)).0"
+              ;;
+            patch)
+              new_version="${parts[0]}.${parts[1]}.$((parts[2] + 1))"
+              ;;
+            *)
+              echo "❌ ERROR: Invalid version type '$version_type'"
               exit 1
-            fi
+              ;;
+          esac
 
-            case "$version_type" in
-              major)
-                new_version="$((parts[0] + 1)).0.0"
-                ;;
-              minor)
-                new_version="${parts[0]}.$((parts[1] + 1)).0"
-                ;;
-              patch)
-                new_version="${parts[0]}.${parts[1]}.$((parts[2] + 1))"
-                ;;
-              *)
-                echo "❌ ERROR: Invalid version type '$version_type'"
-                exit 1
-                ;;
-            esac
+          echo "✅ New version: $new_version"
+          echo "new_version=$new_version" >> $GITHUB_ENV
+          echo "::set-output name=new_version::$new_version"
 
-            echo "✅ New version: $new_version"
-            echo "new_version=$new_version" >> $GITHUB_ENV
-
-      - name: Create and push new tag (Only on push to main)
-        if: github.event_name == 'push'
+      - name: Create Git tag and push
         run: |
-          git config --global user.name "github-actions"
-          git config --global user.email "github-actions@github.com"
-          git tag ${{ env.new_version }}
-          git push origin ${{ env.new_version }}
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          git tag -a "v${{ steps.bump_version.outputs.new_version }}" -m "Version ${{ steps.bump_version.outputs.new_version }}"
+          git push origin "v${{ steps.bump_version.outputs.new_version }}"
 
-      - name: Display new version (For testing)
-        if: github.event_name == 'workflow_dispatch'
-        run: echo "New version would be ${{ env.new_version }} (Test mode, no push)"
-
-  build_receiver:
+  build_software_receiver:
     needs: versioning
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: "recursive"
 
-      - name: Build ESP32 firmware (Receiver)
+      - name: Build ESP32 Software_receiver
         uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: v5.4
           target: esp32
-          path: "Software_receiver"
+          path: 'Software_receiver'
 
-      - name: Rename firmware with version
-        run: |
-          mv Software_receiver/build/firmware.bin Software_receiver/build/firmware-${{ env.new_version }}.bin
-
-      - name: Upload firmware (Receiver)
-        uses: actions/upload-artifact@v4
-        with:
-          name: firmware-receiver-${{ env.new_version }}
-          path: Software_receiver/build/firmware-${{ env.new_version }}.bin
-
-  build_sender:
+  build_software_sender:
     needs: versioning
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: "recursive"
 
-      - name: Build ESP32 firmware (Sender)
+      - name: Build ESP32 Software_sender
         uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: v5.4
           target: esp32
-          path: "Software_sender"
-
-      - name: Rename firmware with version
-        run: |
-          mv Software_sender/build/firmware.bin Software_sender/build/firmware-${{ env.new_version }}.bin
-
-      - name: Upload firmware (Sender)
-        uses: actions/upload-artifact@v4
-        with:
-          name: firmware-sender-${{ env.new_version }}
-          path: Software_sender/build/firmware-${{ env.new_version }}.bin
+          path: 'Software_sender'
