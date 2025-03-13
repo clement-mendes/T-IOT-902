@@ -1,0 +1,111 @@
+name: ESP-IDF CI with Versioning
+
+on:
+  push:
+    branches:
+      - "*"
+  workflow_dispatch:
+    inputs:
+      version_type:
+        description: 'Version Type (major, minor, patch)'
+        required: true
+        default: 'patch'
+
+jobs:
+  versioning:
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.bump_version.outputs.new_version }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Important pour récupérer tous les tags
+
+      - name: Get latest version tag
+        id: get_version
+        run: |
+          git fetch --tags
+          latest_tag=$(git tag --sort=-v:refname | head -n 1)
+          if [[ -z "$latest_tag" ]]; then
+            latest_tag="0.0.0"
+          fi
+          echo "🔹 Latest version: $latest_tag"
+          echo "version=$latest_tag" >> $GITHUB_ENV
+
+      - name: Increment version
+        id: bump_version
+        run: |
+          echo "🔹 Selected version type: ${{ github.event.inputs.version_type }}"  
+
+          old_version="${{ env.version }}"
+          echo "🔹 Old version: $old_version"
+
+          if [[ -z "$old_version" ]]; then
+            echo "❌ ERROR: No previous version found!"
+            exit 1
+          fi
+
+          IFS='.' read -r -a parts <<< "$old_version"
+          version_type="${{ github.event.inputs.version_type }}"
+
+          if [[ -z "$version_type" ]]; then
+            echo "❌ ERROR: version_type is empty!"
+            exit 1
+          fi
+
+          case "$version_type" in
+            major)
+              new_version="$((parts[0] + 1)).0.0"
+              ;;
+            minor)
+              new_version="${parts[0]}.$((parts[1] + 1)).0"
+              ;;
+            patch)
+              new_version="${parts[0]}.${parts[1]}.$((parts[2] + 1))"
+              ;;
+            *)
+              echo "❌ ERROR: Invalid version type '$version_type'"
+              exit 1
+              ;;
+          esac
+
+          echo "✅ New version: $new_version"
+          echo "new_version=$new_version" >> $GITHUB_ENV
+          echo "::set-output name=new_version::$new_version"
+
+      - name: Create Git tag and push
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          git tag -a "v${{ steps.bump_version.outputs.new_version }}" -m "Version ${{ steps.bump_version.outputs.new_version }}"
+          git push origin "v${{ steps.bump_version.outputs.new_version }}"
+
+  build_software_receiver:
+    needs: versioning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build ESP32 Software_receiver
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.4
+          target: esp32
+          path: 'Software_receiver'
+
+  build_software_sender:
+    needs: versioning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build ESP32 Software_sender
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.4
+          target: esp32
+          path: 'Software_sender'
