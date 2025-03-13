@@ -1,0 +1,121 @@
+name: ESP32 CI with Versioning (Main)
+
+on:
+  push:
+    branches:
+      - 'main'
+  workflow_dispatch:
+    inputs:
+      version_type:
+        description: 'Version Type (major, minor, patch)'
+        required: true
+        default: 'patch'
+
+jobs:
+  versioning:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 
+
+      - name: Get latest version
+        id: get_version
+        run: |
+          git fetch --tags
+          latest_tag=$(git tag --sort=-v:refname | head -n 1)
+          if [[ -z "$latest_tag" ]]; then
+            latest_tag="0.0.0"
+          fi
+          echo "Latest version: $latest_tag"
+          echo "version=$latest_tag" >> $GITHUB_ENV
+
+      - name: Increment version
+        id: bump_version
+        run: |
+          old_version=${{ env.version }}
+          IFS='.' read -r -a parts <<< "$old_version"
+          
+          case "${{ github.event.inputs.version_type }}" in
+            major)
+              new_version="$((parts[0] + 1)).0.0"
+              ;;
+            minor)
+              new_version="${parts[0]}.$((parts[1] + 1)).0"
+              ;;
+            patch)
+              new_version="${parts[0]}.${parts[1]}.$((parts[2] + 1))"
+              ;;
+            *)
+              echo "Invalid version type"
+              exit 1
+              ;;
+          esac
+
+          echo "New version: $new_version"
+          echo "new_version=$new_version" >> $GITHUB_ENV
+
+      - name: Create and push new tag (Only on push to main)
+        if: github.event_name == 'push'
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          git tag ${{ env.new_version }}
+          git push origin ${{ env.new_version }}
+
+      - name: Display new version (For testing)
+        if: github.event_name == 'workflow_dispatch'
+        run: echo "New version would be ${{ env.new_version }} (Test mode, no push)"
+
+  build_receiver:
+    needs: versioning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Build ESP32 firmware (Receiver)
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.4
+          target: esp32
+          path: 'Software_receiver'
+
+      - name: Rename firmware with version
+        run: |
+          mv Software_receiver/build/firmware.bin Software_receiver/build/firmware-${{ env.new_version }}.bin
+
+      - name: Upload firmware (Receiver)
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-receiver-${{ env.new_version }}
+          path: Software_receiver/build/firmware-${{ env.new_version }}.bin
+
+  build_sender:
+    needs: versioning
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: 'recursive'
+
+      - name: Build ESP32 firmware (Sender)
+        uses: espressif/esp-idf-ci-action@v1
+        with:
+          esp_idf_version: v5.4
+          target: esp32
+          path: 'Software_sender'
+
+      - name: Rename firmware with version
+        run: |
+          mv Software_sender/build/firmware.bin Software_sender/build/firmware-${{ env.new_version }}.bin
+
+      - name: Upload firmware (Sender)
+        uses: actions/upload-artifact@v4
+        with:
+          name: firmware-sender-${{ env.new_version }}
+          path: Software_sender/build/firmware-${{ env.new_version }}.bin
