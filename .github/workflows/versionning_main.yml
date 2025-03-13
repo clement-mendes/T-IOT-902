@@ -4,6 +4,13 @@ on:
   push:
     branches:
       - "*"
+  pull_request:
+    branches:
+      - "main"
+    types:
+      - opened
+      - synchronize
+      - reopened
   workflow_dispatch:
     inputs:
       version_type:
@@ -21,7 +28,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Important pour récupérer tous les tags
+          fetch-depth: 0 
 
       - name: Get latest version tag
         id: get_version
@@ -29,7 +36,7 @@ jobs:
           git fetch --tags
           latest_tag=$(git tag --sort=-v:refname | head -n 1)
           if [[ -z "$latest_tag" ]]; then
-            latest_tag="0.0.0"
+            latest_tag="v0.0.0"
           fi
           echo "🔹 Latest version: $latest_tag"
           echo "version=$latest_tag" >> $GITHUB_ENV
@@ -47,7 +54,10 @@ jobs:
             exit 1
           fi
 
-          IFS='.' read -r -a parts <<< "$old_version"
+          # Remove leading 'v' if it exists to handle potential "vvv" prefixes
+          clean_version="${old_version//v/}"
+          
+          IFS='.' read -r -a parts <<< "$clean_version"
           version_type="${{ github.event.inputs.version_type }}"
 
           if [[ -z "$version_type" ]]; then
@@ -72,6 +82,10 @@ jobs:
           esac
 
           echo "✅ New version: $new_version"
+          
+          # Re-add the leading 'v'
+          new_version="v${new_version}"
+          
           echo "new_version=$new_version" >> $GITHUB_ENV
           echo "::set-output name=new_version::$new_version"
 
@@ -81,11 +95,13 @@ jobs:
           git config --global user.email "actions@github.com"
 
       - name: Push new Git tag
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git tag -a "v${{ steps.bump_version.outputs.new_version }}" -m "Version ${{ steps.bump_version.outputs.new_version }}"
-          git push origin "v${{ steps.bump_version.outputs.new_version }}"
+          # Make sure the tag name has the correct format
+          git tag -a "${{ steps.bump_version.outputs.new_version }}" -m "Version ${{ steps.bump_version.outputs.new_version }}"
+          git push origin "${{ steps.bump_version.outputs.new_version }}"
 
   build_software_receiver:
     needs: versioning
@@ -105,7 +121,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Software_receiver-${{ needs.versioning.outputs.new_version }}
-          path: Software_receiver/build/*.bin
+          path: 'Software_receiver/build/*.bin'
 
   build_software_sender:
     needs: versioning
@@ -125,4 +141,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Software_sender-${{ needs.versioning.outputs.new_version }}
-          path: Software_sender/build/*.bin
+          path: 'Software_sender/build/*.bin'
