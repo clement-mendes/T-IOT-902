@@ -3,7 +3,7 @@ name: ESP-IDF CI with Versioning
 on:
   pull_request:
     branches:
-      - "main"
+      - main
     types:
       - opened
       - synchronize
