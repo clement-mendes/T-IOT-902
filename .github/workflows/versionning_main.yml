@@ -19,7 +19,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Important pour récupérer tous les tags
+          fetch-depth: 0 
 
       - name: Get latest version tag
         id: get_version
@@ -142,3 +142,4 @@ jobs:
         with:
           name: Software_sender-${{ needs.versioning.outputs.new_version }}
           path: 'Software_sender/build/*.bin'
+          
