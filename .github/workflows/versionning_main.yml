@@ -5,9 +5,7 @@ on:
     branches:
       - main
     types:
-      - opened
-      - synchronize
-      - reopened
+      - closed
 
 jobs:
   versioning:
