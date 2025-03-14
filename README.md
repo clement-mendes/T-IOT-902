@@ -1,7 +1,7 @@
 
 # ESP32 LoRa Sender/Receiver Firmware
 
-![ESP32 Logo](https://upload.wikimedia.org/wikipedia/commons/thumb/0/0f/ESP32_Logo.svg/1280px-ESP32_Logo.svg.png)
+<img src="https://upload.wikimedia.org/wikipedia/commons/7/7b/ESP32_Espressif_ESP-WROOM-32_Shielded.jpg" width="100" alt="ESP32 Logo">
 
 This project is designed for **ESP32** boards using **LoRa** to send sensor data to **Sensor Community** and visualize it with **Metabase**. The firmware includes a **Sender** and **Receiver**, where the Sender sends data via **LoRa** and the Receiver listens for incoming data. The received data is forwarded to **Sensor Community** for storage and visualization.
 
@@ -69,7 +69,6 @@ Clone the repository and navigate to the project directory:
 
 ```bash
 git clone https://github.com/clement-mendes/T-IOT-902
-cd Software
 ```
 
 ### 1. **Set Target and Build Firmware**
@@ -78,12 +77,14 @@ You can choose to build the **Sender** or **Receiver** firmware using the provid
 
 - **Build Sender Firmware** (to send data via LoRa):
   ```bash
-  make TARGET=sender
+  cd Software_sender
+  make deploy
   ```
 
 - **Build Receiver Firmware** (to receive data and forward it to Sensor Community):
   ```bash
-  make TARGET=receiver
+  cd Software_receiver
+  make deploy
   ```
 
 This will compile the firmware, set the target to `esp32`, and flash the device.
@@ -94,6 +95,14 @@ To clean the project and remove previously compiled files, use the following com
 
 ```bash
 make clean
+```
+
+### 3. **Configure the project**
+
+Before build and flash you can configure some variable (Wifi SSID, wifi password, ect), using:
+
+```bash
+make config
 ```
 ## Troubleshooting
 
