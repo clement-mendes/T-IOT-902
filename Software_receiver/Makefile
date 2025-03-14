@@ -8,6 +8,10 @@ deploy:
 	idf.py build
 	idf.py flash monitor
 
+config:
+	@echo "Configuring project..."
+	idf.py menuconfig
+
 monitor:
 	idf.py monitor
 
@@ -25,9 +29,10 @@ help:
 	@echo "Usage: make TARGET=[deploy|clean]"
 	@echo "Targets:"
 	@echo "  deploy    Build and flash receiver firmware"
+	@echo "  config    Configure project"
 	@echo "  tests     Run tests"
 	@echo "  monitor   Monitor serial output"
 	@echo "  clean     Clean build artifacts for test and receiver"
 	@echo "  help      Display this help message"
 
-.PHONY: all clean help tests deploy monitor
+.PHONY: all clean help tests deploy monitor config
