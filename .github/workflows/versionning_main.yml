@@ -141,5 +141,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Software_sender-${{ needs.versioning.outputs.new_version }}
-          path: 'Software_sender/build/*.bin'
-          
+          path: 'Software_sender/build/*.bin'      
