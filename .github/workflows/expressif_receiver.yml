@@ -3,10 +3,10 @@ name: ESP-IDF CI Receiver
 on:
   push:
     branches:
-      - 'dev'
+      - dev
   pull_request:
     branches:
-      - 'dev'
+      - dev
 
 jobs:
   build_receiver:
