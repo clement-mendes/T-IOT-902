@@ -230,30 +230,6 @@ lora_reset(void)
 }
 
 /**
- * Configure explicit header mode.
- * Packet size will be included in the frame.
- */
-void 
-lora_explicit_header_mode(void)
-{
-   _implicit = 0;
-   lora_write_reg(REG_MODEM_CONFIG_1, lora_read_reg(REG_MODEM_CONFIG_1) & 0xfe);
-}
-
-/**
- * Configure implicit header mode.
- * All packets will have a predefined size.
- * @param size Size of the packets.
- */
-void 
-lora_implicit_header_mode(int size)
-{
-   _implicit = 1;
-   lora_write_reg(REG_MODEM_CONFIG_1, lora_read_reg(REG_MODEM_CONFIG_1) | 0x01);
-   lora_write_reg(REG_PAYLOAD_LENGTH, size);
-}
-
-/**
  * Sets the radio transceiver in idle mode.
  * Must be used to change registers and access the FIFO.
  */
@@ -271,16 +247,6 @@ void
 lora_sleep(void)
 { 
    lora_write_reg(REG_OP_MODE, MODE_LONG_RANGE_MODE | MODE_SLEEP);
-}
-
-/**
- * Sets the radio transceiver in receive mode.
- * Incoming packets will be received.
- */
-void 
-lora_receive(void)
-{
-   lora_write_reg(REG_OP_MODE, MODE_LONG_RANGE_MODE | MODE_RX_CONTINUOUS);
 }
 
 /**
@@ -344,76 +310,6 @@ lora_get_spreading_factor(void)
 }
 
 /**
- * Set Mapping of pins DIO0 to DIO5
- * @param dio Number of DIO(0 to 5)
- * @param mode mode of DIO(0 to 3)
- */
-void 
-lora_set_dio_mapping(int dio, int mode)
-{
-   if (dio < 4) {
-      int _mode = lora_read_reg(REG_DIO_MAPPING_1);
-      if (dio == 0) {
-         _mode = _mode & 0x3F;
-         _mode = _mode | (mode << 6);
-      } else if (dio == 1) {
-         _mode = _mode & 0xCF;
-         _mode = _mode | (mode << 4);
-      } else if (dio == 2) {
-         _mode = _mode & 0xF3;
-         _mode = _mode | (mode << 2);
-      } else if (dio == 3) {
-         _mode = _mode & 0xFC;
-         _mode = _mode | mode;
-      }
-      lora_write_reg(REG_DIO_MAPPING_1, _mode);
-      ESP_LOGD(TAG, "REG_DIO_MAPPING_1=0x%02x", _mode);
-   } else if (dio < 6) {
-      int _mode = lora_read_reg(REG_DIO_MAPPING_2);
-      if (dio == 4) {
-         _mode = _mode & 0x3F;
-         _mode = _mode | (mode << 6);
-      } else if (dio == 5) {
-         _mode = _mode & 0xCF;
-         _mode = _mode | (mode << 4);
-      }
-      ESP_LOGD(TAG, "REG_DIO_MAPPING_2=0x%02x", _mode);
-      lora_write_reg(REG_DIO_MAPPING_2, _mode);
-   }
-}
-
-/**
- * Get Mapping of pins DIO0 to DIO5
- * @param dio Number of DIO(0 to 5)
- */
-int 
-lora_get_dio_mapping(int dio)
-{
-   if (dio < 4) {
-      int _mode = lora_read_reg(REG_DIO_MAPPING_1);
-      ESP_LOGD(TAG, "REG_DIO_MAPPING_1=0x%02x", _mode);
-      if (dio == 0) {
-         return ((_mode >> 6) & 0x03);
-      } else if (dio == 1) {
-         return ((_mode >> 4) & 0x03);
-      } else if (dio == 2) {
-         return ((_mode >> 2) & 0x03);
-      } else if (dio == 3) {
-         return (_mode & 0x03);
-      }
-   } else if (dio < 6) {
-      int _mode = lora_read_reg(REG_DIO_MAPPING_2);
-      ESP_LOGD(TAG, "REG_DIO_MAPPING_2=0x%02x", _mode);
-      if (dio == 4) {
-         return ((_mode >> 6) & 0x03);
-      } else if (dio == 5) {
-         return ((_mode >> 4) & 0x03);
-      }
-   }
-   return 0;
-}
-
-/**
  * Set bandwidth (bit rate)
  * @param sbw Signal bandwidth(0 to 9)
  */
@@ -465,39 +361,6 @@ int
 lora_get_coding_rate(void)
 {
    return ((lora_read_reg(REG_MODEM_CONFIG_1) & 0x0E) >> 1);
-}
-
-/**
- * Set the size of preamble.
- * @param length Preamble length in symbols.
- */
-void 
-lora_set_preamble_length(long length)
-{
-   lora_write_reg(REG_PREAMBLE_MSB, (uint8_t)(length >> 8));
-   lora_write_reg(REG_PREAMBLE_LSB, (uint8_t)(length >> 0));
-}
-
-/**
- * Get the size of preamble.
- */
-long
-lora_get_preamble_length(void)
-{
-   long preamble;
-   preamble = lora_read_reg(REG_PREAMBLE_MSB) << 8;
-   preamble = preamble + lora_read_reg(REG_PREAMBLE_LSB);
-   return preamble;
-}
-
-/**
- * Change radio sync word.
- * @param sw New sync word to use.
- */
-void 
-lora_set_sync_word(int sw)
-{
-   lora_write_reg(REG_SYNC_WORD, sw);
 }
 
 /**
@@ -595,6 +458,15 @@ lora_init(void)
 }
 
 /**
+ * Return lost send packet count.
+ */
+int 
+lora_packet_lost(void)
+{
+   return (_send_packet_lost);
+}
+
+/**
  * Send a packet.
  * @param buf Data to be sent
  * @param size Size of data.
@@ -655,95 +527,6 @@ lora_send_packet(uint8_t *buf, int size)
 }
 
 /**
- * Read a received packet.
- * @param buf Buffer for the data.
- * @param size Available size in buffer (bytes).
- * @return Number of bytes received (zero if no packet available).
- */
-int 
-lora_receive_packet(uint8_t *buf, int size)
-{
-   int len = 0;
-
-   /*
-    * Check interrupts.
-    */
-   int irq = lora_read_reg(REG_IRQ_FLAGS);
-   lora_write_reg(REG_IRQ_FLAGS, irq);
-   if((irq & IRQ_RX_DONE_MASK) == 0) return 0;
-   if(irq & IRQ_PAYLOAD_CRC_ERROR_MASK) return 0;
-
-   /*
-    * Find packet size.
-    */
-   if (_implicit) len = lora_read_reg(REG_PAYLOAD_LENGTH);
-   else len = lora_read_reg(REG_RX_NB_BYTES);
-
-   /*
-    * Transfer data from radio.
-    */
-   lora_idle();   
-   lora_write_reg(REG_FIFO_ADDR_PTR, lora_read_reg(REG_FIFO_RX_CURRENT_ADDR));
-   if(len > size) len = size;
-#if BUFFER_IO
-   lora_read_reg_buffer(REG_FIFO, buf, len);
-#else
-   for(int i=0; i<len; i++) 
-      *buf++ = lora_read_reg(REG_FIFO);
-#endif
-
-   return len;
-}
-
-/**
- * Returns non-zero if there is data to read (packet received).
- */
-int
-lora_received(void)
-{
-   if(lora_read_reg(REG_IRQ_FLAGS) & IRQ_RX_DONE_MASK) return 1;
-   return 0;
-}
-
-/**
- * Returns RegIrqFlags.
- */
-int
-lora_get_irq(void)
-{
-   return (lora_read_reg(REG_IRQ_FLAGS));
-}
-
-
-/**
- * Return lost send packet count.
- */
-int 
-lora_packet_lost(void)
-{
-   return (_send_packet_lost);
-}
-
-/**
- * Return last packet's RSSI.
- */
-int 
-lora_packet_rssi(void)
-{
-   return (lora_read_reg(REG_PKT_RSSI_VALUE) - (_frequency < 868E6 ? 164 : 157));
-}
-
-
-/**
- * Return last packet's SNR (signal to noise ratio).
- */
-float 
-lora_packet_snr(void)
-{
-   return ((int8_t)lora_read_reg(REG_PKT_SNR_VALUE)) * 0.25;
-}
-
-/**
  * Shutdown hardware.
  */
 void 
@@ -757,16 +540,3 @@ lora_close(void)
 //   __cs = -1;
 //   __rst = -1;
 }
-
-void 
-lora_dump_registers(void)
-{
-   int i;
-   printf("00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F\n");
-   for(i=0; i<0x40; i++) {
-      printf("%02X ", lora_read_reg(i));
-      if((i & 0x0f) == 0x0f) printf("\n");
-   }
-   printf("\n");
-}
-

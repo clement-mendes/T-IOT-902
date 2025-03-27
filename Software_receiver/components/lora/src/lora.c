@@ -230,30 +230,6 @@ lora_reset(void)
 }
 
 /**
- * Configure explicit header mode.
- * Packet size will be included in the frame.
- */
-void 
-lora_explicit_header_mode(void)
-{
-   _implicit = 0;
-   lora_write_reg(REG_MODEM_CONFIG_1, lora_read_reg(REG_MODEM_CONFIG_1) & 0xfe);
-}
-
-/**
- * Configure implicit header mode.
- * All packets will have a predefined size.
- * @param size Size of the packets.
- */
-void 
-lora_implicit_header_mode(int size)
-{
-   _implicit = 1;
-   lora_write_reg(REG_MODEM_CONFIG_1, lora_read_reg(REG_MODEM_CONFIG_1) | 0x01);
-   lora_write_reg(REG_PAYLOAD_LENGTH, size);
-}
-
-/**
  * Sets the radio transceiver in idle mode.
  * Must be used to change registers and access the FIFO.
  */
@@ -344,76 +320,6 @@ lora_get_spreading_factor(void)
 }
 
 /**
- * Set Mapping of pins DIO0 to DIO5
- * @param dio Number of DIO(0 to 5)
- * @param mode mode of DIO(0 to 3)
- */
-void 
-lora_set_dio_mapping(int dio, int mode)
-{
-   if (dio < 4) {
-      int _mode = lora_read_reg(REG_DIO_MAPPING_1);
-      if (dio == 0) {
-         _mode = _mode & 0x3F;
-         _mode = _mode | (mode << 6);
-      } else if (dio == 1) {
-         _mode = _mode & 0xCF;
-         _mode = _mode | (mode << 4);
-      } else if (dio == 2) {
-         _mode = _mode & 0xF3;
-         _mode = _mode | (mode << 2);
-      } else if (dio == 3) {
-         _mode = _mode & 0xFC;
-         _mode = _mode | mode;
-      }
-      lora_write_reg(REG_DIO_MAPPING_1, _mode);
-      ESP_LOGD(TAG, "REG_DIO_MAPPING_1=0x%02x", _mode);
-   } else if (dio < 6) {
-      int _mode = lora_read_reg(REG_DIO_MAPPING_2);
-      if (dio == 4) {
-         _mode = _mode & 0x3F;
-         _mode = _mode | (mode << 6);
-      } else if (dio == 5) {
-         _mode = _mode & 0xCF;
-         _mode = _mode | (mode << 4);
-      }
-      ESP_LOGD(TAG, "REG_DIO_MAPPING_2=0x%02x", _mode);
-      lora_write_reg(REG_DIO_MAPPING_2, _mode);
-   }
-}
-
-/**
- * Get Mapping of pins DIO0 to DIO5
- * @param dio Number of DIO(0 to 5)
- */
-int 
-lora_get_dio_mapping(int dio)
-{
-   if (dio < 4) {
-      int _mode = lora_read_reg(REG_DIO_MAPPING_1);
-      ESP_LOGD(TAG, "REG_DIO_MAPPING_1=0x%02x", _mode);
-      if (dio == 0) {
-         return ((_mode >> 6) & 0x03);
-      } else if (dio == 1) {
-         return ((_mode >> 4) & 0x03);
-      } else if (dio == 2) {
-         return ((_mode >> 2) & 0x03);
-      } else if (dio == 3) {
-         return (_mode & 0x03);
-      }
-   } else if (dio < 6) {
-      int _mode = lora_read_reg(REG_DIO_MAPPING_2);
-      ESP_LOGD(TAG, "REG_DIO_MAPPING_2=0x%02x", _mode);
-      if (dio == 4) {
-         return ((_mode >> 6) & 0x03);
-      } else if (dio == 5) {
-         return ((_mode >> 4) & 0x03);
-      }
-   }
-   return 0;
-}
-
-/**
  * Set bandwidth (bit rate)
  * @param sbw Signal bandwidth(0 to 9)
  */
@@ -465,39 +371,6 @@ int
 lora_get_coding_rate(void)
 {
    return ((lora_read_reg(REG_MODEM_CONFIG_1) & 0x0E) >> 1);
-}
-
-/**
- * Set the size of preamble.
- * @param length Preamble length in symbols.
- */
-void 
-lora_set_preamble_length(long length)
-{
-   lora_write_reg(REG_PREAMBLE_MSB, (uint8_t)(length >> 8));
-   lora_write_reg(REG_PREAMBLE_LSB, (uint8_t)(length >> 0));
-}
-
-/**
- * Get the size of preamble.
- */
-long
-lora_get_preamble_length(void)
-{
-   long preamble;
-   preamble = lora_read_reg(REG_PREAMBLE_MSB) << 8;
-   preamble = preamble + lora_read_reg(REG_PREAMBLE_LSB);
-   return preamble;
-}
-
-/**
- * Change radio sync word.
- * @param sw New sync word to use.
- */
-void 
-lora_set_sync_word(int sw)
-{
-   lora_write_reg(REG_SYNC_WORD, sw);
 }
 
 /**
@@ -592,66 +465,6 @@ lora_init(void)
 
    lora_idle();
    return 1;
-}
-
-/**
- * Send a packet.
- * @param buf Data to be sent
- * @param size Size of data.
- */
-void 
-lora_send_packet(uint8_t *buf, int size)
-{
-   /*
-    * Transfer data to radio.
-    */
-   lora_idle();
-   lora_write_reg(REG_FIFO_ADDR_PTR, 0);
-
-#if BUFFER_IO
-   lora_write_reg_buffer(REG_FIFO, buf, size);
-#else
-   for(int i=0; i<size; i++) 
-      lora_write_reg(REG_FIFO, *buf++);
-#endif
-   
-   lora_write_reg(REG_PAYLOAD_LENGTH, size);
-   
-   /*
-    * Start transmission and wait for conclusion.
-    */
-   lora_write_reg(REG_OP_MODE, MODE_LONG_RANGE_MODE | MODE_TX);
-#if 0
-   while((lora_read_reg(REG_IRQ_FLAGS) & IRQ_TX_DONE_MASK) == 0)
-      vTaskDelay(2);
-#endif
-   int loop = 0;
-   int max_retry;
-   if (_sbw < 2) {
-      max_retry = 500;
-   } else if (_sbw < 4) {
-      max_retry = 250;
-   } else if (_sbw < 6) {
-      max_retry = 125;
-   } else if (_sbw < 8) {
-      max_retry = 60;
-   } else {
-      max_retry = 30;
-   }
-   ESP_LOGD(TAG, "_sbw=%d max_retry=%d", _sbw, max_retry);
-   while(1) {
-      int irq = lora_read_reg(REG_IRQ_FLAGS);
-      ESP_LOGD(TAG, "lora_read_reg=0x%x", irq);
-      if ((irq & IRQ_TX_DONE_MASK) == IRQ_TX_DONE_MASK) break;
-      loop++;
-      if (loop == max_retry) break;
-      vTaskDelay(2);
-   }
-   if (loop == max_retry) {
-      _send_packet_lost++;
-      ESP_LOGE(TAG, "lora_send_packet Fail");
-   }
-   lora_write_reg(REG_IRQ_FLAGS, IRQ_TX_DONE_MASK);
 }
 
 /**
@@ -757,16 +570,3 @@ lora_close(void)
 //   __cs = -1;
 //   __rst = -1;
 }
-
-void 
-lora_dump_registers(void)
-{
-   int i;
-   printf("00 01 02 03 04 05 06 07 08 09 0A 0B 0C 0D 0E 0F\n");
-   for(i=0; i<0x40; i++) {
-      printf("%02X ", lora_read_reg(i));
-      if((i & 0x0f) == 0x0f) printf("\n");
-   }
-   printf("\n");
-}
-

@@ -33,7 +33,7 @@ void app_main(void) {
 		}
 	}
     ESP_LOGI(pcTaskGetName(NULL), "Frequency is 866MHz");
-	lora_set_frequency(868e6); // 866MHz    
+	lora_set_frequency(868e6);   
     
     lora_enable_crc();
 

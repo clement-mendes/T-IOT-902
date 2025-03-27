@@ -68,7 +68,7 @@ menu "LoRa Configuration"
 	config MISO_GPIO
 		int "MISO GPIO"
 		range 0 GPIO_RANGE_MAX
-		default 27
+		default 19
 		help
 			Pin Number to be used as the MISO SPI signal.
 
