@@ -1,60 +1,105 @@
+/**
+ * @file main.c
+ * @brief Main program using LoRa with FreeRTOS.
+ *
+ * This program manages a state machine for LoRa communication,
+ * including INIT, ACQUISITION, TRANSMISSION, SLEEPMODE, WAKEUP, and ERROR states.
+ * It uses FreeRTOS for task management and delays.
+ */
+
 #include <stdio.h>
 #include <inttypes.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
-
 #include "lora.h"
 
 /**
- * @file main.c
- * @brief Programme to display Hello World.
+ * @brief Function to send a packet using LoRa.
+ *
+ * This function sends a "Hello World" message using the LoRa module.
+ * It is currently commented out and can be enabled if needed.
  */
 
- void task_tx(void *pvParameters)
-{
-	ESP_LOGI(pcTaskGetName(NULL), "Start");
-	uint8_t buf[256]; // Maximum Payload size of SX1276/77/78/79 is 255
-	while(1) {
-		TickType_t nowTick = xTaskGetTickCount();
-		int send_len = sprintf((char *)buf,"Hello World!! %"PRIu32, nowTick);
-		lora_send_packet(buf, send_len);
-		ESP_LOGI(pcTaskGetName(NULL), "%d byte packet sent...", send_len);
-		int lost = lora_packet_lost();
-		if (lost != 0) {
-			ESP_LOGW(pcTaskGetName(NULL), "%d packets lost", lost);
-		}
-		vTaskDelay(pdMS_TO_TICKS(5000));
-	} // end while
-}
+//  void sendPacket()
+//  {
+// 	 const char *msg = "Hello World";
+// 	 int send_len = strlen(msg);
+ 
+// 	 lora_send_packet((uint8_t *)msg, send_len);
+// 	 ESP_LOGI("STATE", "%d byte packet sent...", send_len);
+//  }
+ 
 
-void app_main(void) {
-    if (lora_init() == 0) {
-		ESP_LOGE(pcTaskGetName(NULL), "Does not recognize the module");
-		while(1) {
-			vTaskDelay(1);
+/**
+ * @brief Main function of the FreeRTOS application.
+ *
+ * This function implements a state machine to manage
+ * the different operating modes of the LoRa module.
+ */
+void app_main(void)
+{
+
+	/**
+	 * @enum LoRaState
+	 * @brief Possible states of the LoRa system.
+	 */
+	enum LoRaState
+	{
+		INIT,
+		ACQUISITION,
+		TRANSMISSION,
+		SLEEPMODE,
+		WAKEUP,
+		ERROR
+	};
+
+	/**
+	 * @var state
+	 * @brief Current state of the LoRa system.
+	 */
+	enum LoRaState state = INIT;
+	while (1)
+	{
+		switch (state)
+		{
+		case INIT:
+			ESP_LOGE(pcTaskGetName(NULL), "Init mode");
+			if (lora_init() == 0)
+			{
+				ESP_LOGE(pcTaskGetName(NULL), "Does not recognize the LoRa module. Verify the connections and configuration.");
+				state = ERROR;
+			}
+			lora_set_frequency(868e6);
+			state = ACQUISITION;
+			break;
+		case ACQUISITION:
+			ESP_LOGE(pcTaskGetName(NULL), "Acquisition mode");
+			vTaskDelay(pdMS_TO_TICKS(5000));
+			state = TRANSMISSION;
+			break;
+		case TRANSMISSION:
+			ESP_LOGE(pcTaskGetName(NULL), "Transmission mode");
+			// sendPacket();
+			vTaskDelay(pdMS_TO_TICKS(5000));
+			state = SLEEPMODE;
+			break;
+		case SLEEPMODE:
+			ESP_LOGE(pcTaskGetName(NULL), "Sleep mode");
+			vTaskDelay(pdMS_TO_TICKS(5000));
+			state = WAKEUP;
+			break;
+		case WAKEUP:
+			ESP_LOGE(pcTaskGetName(NULL), "Wake up mode");
+			vTaskDelay(pdMS_TO_TICKS(5000));
+			state = ACQUISITION;
+			break;
+		case ERROR:
+			ESP_LOGE(pcTaskGetName(NULL), "Error mode");
+			vTaskDelay(pdMS_TO_TICKS(5000));
+			state = INIT;
+			break;
 		}
 	}
-    ESP_LOGI(pcTaskGetName(NULL), "Frequency is 866MHz");
-	lora_set_frequency(868e6);  
-    
-    lora_enable_crc();
-
-	int cr = 1;
-	int bw = 7;
-	int sf = 7;
-    lora_set_coding_rate(cr);
-
-	ESP_LOGI(pcTaskGetName(NULL), "coding_rate=%d", cr);
-
-	lora_set_bandwidth(bw);
-
-	ESP_LOGI(pcTaskGetName(NULL), "bandwidth=%d", bw);
-
-	lora_set_spreading_factor(sf);
-
-	ESP_LOGI(pcTaskGetName(NULL), "spreading_factor=%d", sf);
-    xTaskCreate(&task_tx, "TX", 1024*3, NULL, 5, NULL);
-
 }
