@@ -90,7 +90,7 @@ void app_main(void)
     enum LoRaState
     {
         INIT,             /**< Initialization mode. */
-        ACQUISITION,      /**< Data acquisition mode. */
+        LISTENING,      /**< Data acquisition mode. */
         WIFITRANSMISSION, /**< WiFi data transmission mode. */
         ERROR             /**< Error mode. */
     };
@@ -117,9 +117,9 @@ void app_main(void)
                 state = ERROR;
             }
             lora_set_frequency(868e6);
-            state = ACQUISITION;
+            state = LISTENING;
             break;
-        case ACQUISITION:
+        case LISTENING:
             /**
              * @brief Creates a task to handle LoRa reception.
              *

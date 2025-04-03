@@ -14,6 +14,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "lora.h"
+#include "dust_sensor.h"
 
 /**
  * @brief Function to send a packet using LoRa.
@@ -26,11 +27,10 @@
 //  {
 // 	 const char *msg = "Hello World";
 // 	 int send_len = strlen(msg);
- 
+
 // 	 lora_send_packet((uint8_t *)msg, send_len);
 // 	 ESP_LOGI("STATE", "%d byte packet sent...", send_len);
 //  }
- 
 
 /**
  * @brief Main function of the FreeRTOS application.
@@ -60,6 +60,15 @@ void app_main(void)
 	 * @brief Current state of the LoRa system.
 	 */
 	enum LoRaState state = INIT;
+
+	dust_sensor_init();
+	while(1)
+	{
+		float dust_density = dust_sensor_read();								 // Récupération de la densité de poussière
+		// ESP_LOGI(pcTaskGetName(NULL), "Dust density: %.2f µg/m³", dust_density); // Affichage de la valeur
+		vTaskDelay(pdMS_TO_TICKS(2000));										 // Attente de 1 seconde entre les lectures
+	}
+
 	while (1)
 	{
 		switch (state)
