@@ -11,132 +11,108 @@ jobs:
   versioning:
     runs-on: ubuntu-latest
     outputs:
-      new_version: ${{ steps.bump_version.outputs.new_version }}
+      receiver_version: ${{ steps.set_versions.outputs.receiver_version }}
+      sender_version: ${{ steps.set_versions.outputs.sender_version }}
+      build_receiver: ${{ steps.set_versions.outputs.build_receiver }}
+      build_sender: ${{ steps.set_versions.outputs.build_sender }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 
+          fetch-depth: 0
 
-      - name: Get latest version tag
-        id: get_version
+      - name: Get PR Labels and determine targets
+        id: set_versions
         run: |
-          git fetch --tags
-          latest_tag=$(git tag --sort=-v:refname | head -n 1)
-          if [[ -z "$latest_tag" ]]; then
-            latest_tag="v0.0.0"
-          fi
-          echo "🔹 Latest version: $latest_tag"
-          echo "version=$latest_tag" >> $GITHUB_ENV
-
-      - name: Get PR Labels
-        id: pr_labels
-        run: |
-          pr_labels=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          echo "Fetching PR labels..."
+          labels=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             https://api.github.com/repos/${{ github.repository }}/issues/${{ github.event.pull_request.number }}/labels \
             | jq -r '.[].name')
-          echo "Labels: $pr_labels"
 
-          # Detect version type based on labels
-          if echo "$pr_labels" | grep -q "major"; then
+          echo "Labels: $labels"
+
+          version_type=""
+          if echo "$labels" | grep -q "major"; then
             version_type="major"
-          elif echo "$pr_labels" | grep -q "minor"; then
+          elif echo "$labels" | grep -q "minor"; then
             version_type="minor"
-          elif echo "$pr_labels" | grep -q "patch"; then
+          elif echo "$labels" | grep -q "patch"; then
             version_type="patch"
           else
-            echo "❌ ERROR: No valid version label found! Please add a 'major', 'minor', or 'patch' label."
+            echo "❌ No version type label found (major/minor/patch)"
             exit 1
           fi
 
-          echo "version_type=$version_type" >> $GITHUB_ENV
+          bump_version() {
+            component=$1
+            latest=$(git tag --list "${component}-v*" --sort=-v:refname | head -n1)
+            [ -z "$latest" ] && latest="${component}-v0.0.0"
+            clean="${latest#${component}-v}"
+            IFS='.' read -r -a parts <<< "$clean"
 
-      - name: Increment version
-        id: bump_version
-        run: |
-          echo "🔹 Selected version type: ${{ env.version_type }}"  
+            case "$version_type" in
+              major) new="${component}-v$((parts[0] + 1)).0.0" ;;
+              minor) new="${component}-v${parts[0]}.$((parts[1] + 1)).0" ;;
+              patch) new="${component}-v${parts[0]}.${parts[1]}.$((parts[2] + 1))" ;;
+            esac
 
-          old_version="${{ env.version }}"
-          echo "🔹 Old version: $old_version"
+            git tag -a "$new" -m "$component version $new"
+            git push origin "$new"
+            echo "$new"
+          }
 
-          if [[ -z "$old_version" ]]; then
-            echo "❌ ERROR: No previous version found!"
-            exit 1
+          build_receiver="false"
+          build_sender="false"
+          receiver_version=""
+          sender_version=""
+
+          if echo "$labels" | grep -q "receiver"; then
+            build_receiver="true"
+            receiver_version=$(bump_version "receiver")
           fi
 
-          clean_version="${old_version//v/}"
-          IFS='.' read -r -a parts <<< "$clean_version"
+          if echo "$labels" | grep -q "sender"; then
+            build_sender="true"
+            sender_version=$(bump_version "sender")
+          fi
 
-          case "$version_type" in
-            major)
-              new_version="$((parts[0] + 1)).0.0"
-              ;;
-            minor)
-              new_version="${parts[0]}.$((parts[1] + 1)).0"
-              ;;
-            patch)
-              new_version="${parts[0]}.${parts[1]}.$((parts[2] + 1))"
-              ;;
-            *)
-              echo "❌ ERROR: Invalid version type '$version_type'"
-              exit 1
-              ;;
-          esac
-
-          echo "✅ New version: $new_version"
-          new_version="v${new_version}"
-          echo "new_version=$new_version" >> $GITHUB_ENV
-          echo "::set-output name=new_version::$new_version"
-
-      - name: Configure Git user
-        run: |
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
-
-      - name: Push new Git tag
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git tag -a "${{ steps.bump_version.outputs.new_version }}" -m "Version ${{ steps.bump_version.outputs.new_version }}"
-          git push origin "${{ steps.bump_version.outputs.new_version }}"
-
+          echo "::set-output name=build_receiver::$build_receiver"
+          echo "::set-output name=build_sender::$build_sender"
+          echo "::set-output name=receiver_version::$receiver_version"
+          echo "::set-output name=sender_version::$sender_version"
   build_software_receiver:
     needs: versioning
+    if: needs.versioning.outputs.build_receiver == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
       - name: Build ESP32 Software_receiver
         uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: v5.4
           target: esp32
           path: 'Software_receiver'
-
-      - name: Upload Software_receiver artifacts
+      - name: Upload Receiver Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Software_receiver-${{ needs.versioning.outputs.new_version }}
+          name: Software_receiver-${{ needs.versioning.outputs.receiver_version }}
           path: 'Software_receiver/build/*.bin'
 
   build_software_sender:
     needs: versioning
+    if: needs.versioning.outputs.build_sender == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
       - name: Build ESP32 Software_sender
         uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: v5.4
           target: esp32
           path: 'Software_sender'
-
-      - name: Upload Software_sender artifacts
+      - name: Upload Sender Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: Software_sender-${{ needs.versioning.outputs.new_version }}
-          path: 'Software_sender/build/*.bin'      
+          name: Software_sender-${{ needs.versioning.outputs.sender_version }}
+          path: 'Software_sender/build/*.bin'
