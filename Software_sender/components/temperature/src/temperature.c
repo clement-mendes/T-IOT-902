@@ -4,9 +4,9 @@
 #include <stdint.h>
 
 #define I2C_MASTER_NUM           I2C_NUM_0
-#define I2C_MASTER_FREQ_HZ       100000
+#define I2C_MASTER_FREQ_HZ       50000 
 #define I2C_MASTER_SDA_IO        21
-#define I2C_MASTER_SCL_IO        13
+#define I2C_MASTER_SCL_IO        22
 // Adresse I²C du BME280 (vérifiez si c'est 0x76 ou 0x77 selon votre module)
 #define BME280_ADDR              0x76
 
