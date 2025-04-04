@@ -20,7 +20,6 @@
  * @brief Function to send a packet using LoRa.
  *
  * This function sends a "Hello World" message using the LoRa module.
- * It is currently commented out and can be enabled if needed.
  */
 
 //  void sendPacket()
@@ -61,14 +60,7 @@ void app_main(void)
 	 */
 	enum LoRaState state = INIT;
 
-	dust_sensor_init();
-	while(1)
-	{
-		float dust_density = dust_sensor_read();								 // Récupération de la densité de poussière
-		// ESP_LOGI(pcTaskGetName(NULL), "Dust density: %.2f µg/m³", dust_density); // Affichage de la valeur
-		vTaskDelay(pdMS_TO_TICKS(2000));										 // Attente de 1 seconde entre les lectures
-	}
-
+	// dust_sensor_init();
 	while (1)
 	{
 		switch (state)
