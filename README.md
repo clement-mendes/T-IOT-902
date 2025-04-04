@@ -122,5 +122,4 @@ If you face any issues during the build or flashing process:
 
 ---
 
-
 Happy coding with **ESP32**, **LoRa**, **Sensor Community**, and **Metabase**! 🌍📡📊
