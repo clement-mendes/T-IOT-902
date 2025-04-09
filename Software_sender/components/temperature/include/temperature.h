@@ -1,3 +1,4 @@
+// La garde d’inclusion évite cela : elle s'assure que le contenu du fichier .h ne soit compilé qu'une seule fois, même s’il est inclus plusieurs fois.
 #ifndef TEMPERATURE_H
 #define TEMPERATURE_H
 
