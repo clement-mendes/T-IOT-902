@@ -14,6 +14,10 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "lora.h"
+#include "temperature.h"
+
+#include <math.h>
+#include "sound.h"
 
 /**
  * @brief Function to send a packet using LoRa.
@@ -30,7 +34,14 @@
 // 	 lora_send_packet((uint8_t *)msg, send_len);
 // 	 ESP_LOGI("STATE", "%d byte packet sent...", send_len);
 //  }
- 
+
+
+/**
+ * @brief Function to initialize the sound system.
+ *
+ * This function initializes the I2S interface for audio input.
+ */
+// void sound_init()
 
 /**
  * @brief Main function of the FreeRTOS application.
@@ -40,7 +51,6 @@
  */
 void app_main(void)
 {
-
 	/**
 	 * @enum LoRaState
 	 * @brief Possible states of the LoRa system.
