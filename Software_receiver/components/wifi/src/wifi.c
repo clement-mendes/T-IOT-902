@@ -87,12 +87,12 @@ void wifi_init_sta(void)
                                                         ESP_EVENT_ANY_ID,
                                                         &event_handler,
                                                         NULL,
-                                                        &instance_any_id));
+                                                        &instance_any_id)); //Enregistre event_handler() pour TOUS les événements Wi-Fi (comme START, DISCONNECTED...)
     ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
                                                         IP_EVENT_STA_GOT_IP,
                                                         &event_handler,
                                                         NULL,
-                                                        &instance_got_ip));
+                                                        &instance_got_ip));//Enregistre event_handler() pour l'événement IP quand le Wi-Fi obtient une adresse IP
 
     // Configure the Wi-Fi connection settings (SSID and password)
     wifi_config_t wifi_config = {

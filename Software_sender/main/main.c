@@ -14,6 +14,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "lora.h"
+#include "temperature.h"
 
 #include <math.h>
 #include "sound.h"
