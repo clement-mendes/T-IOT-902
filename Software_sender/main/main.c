@@ -41,21 +41,6 @@
  */
 void app_main(void)
 {
-
-	temperature_init();
-
-    while (1)
-    {
-        // Récupération de la température
-   // Lecture initiale des données du capteur
-    float current_temp = temperature_get();
-    float current_pressure = pressure_get();
-    printf("Temperature actuelle: %.2f °C\n", current_temp);
-    printf("Pression actuelle: %.2f hPa\n", current_pressure);
-
-    // Délai court avant de démarrer la machine à états (si nécessaire)
-    vTaskDelay(pdMS_TO_TICKS(500));
-    }
 	/**
 	 * @enum LoRaState
 	 * @brief Possible states of the LoRa system.
