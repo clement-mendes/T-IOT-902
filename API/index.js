@@ -4,10 +4,12 @@ const port = 3000;
 
 app.use(express.json());
 
+// Route to handle the root endpoint
 app.get('/', (req, res) => {
-    res.send('Bienvenue sur l\'API Node.js !');
+    res.send('Welcome to the Node.js API!');
 });
 
+// Route to retrieve data
 app.get('/data', (req, res) => {
     const data = {
         temperature: 25.5,
@@ -18,11 +20,12 @@ app.get('/data', (req, res) => {
     res.json(data);
 });
 
+// Route to handle data submission
 app.post('/data', (req, res) => {
-    console.log('Données reçues :', req.body);
-    res.status(201).send('Données enregistrées avec succès.');
+    console.log('Data received:', req.body);
+    res.status(201).send('Data successfully saved.');
 });
 
 app.listen(port, () => {
-    console.log(`API en cours d'exécution sur http://localhost:${port}`);
+    console.log(`API running at http://localhost:${port}`);
 });
