@@ -14,7 +14,7 @@
  * 
  * Defines the frequency at which audio samples are captured.
  */
-#define I2S_SAMPLE_RATE   16000 
+#define I2S_SAMPLE_RATE   22050 
 
 /**
  * @brief Bits per audio sample.
@@ -42,9 +42,9 @@
  * 
  * Defines the GPIO pins used for I2S communication.
  */
-#define I2S_BCK_IO        21   // GPIO pin for BCLK (Bit Clock)
+#define I2S_BCK_IO        25   // GPIO pin for BCLK (Bit Clock)
 #define I2S_WS_IO         13   // GPIO pin for LRCL (Word Select)
-#define I2S_DATA_IN_IO    12   // GPIO pin for DOUT (Data Input)
+#define I2S_DATA_IN_IO    14   // GPIO pin for DOUT (Data Input)
 
 /**
  * @brief Initializes the I2S sound module.
