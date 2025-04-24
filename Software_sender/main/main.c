@@ -15,7 +15,6 @@
 #include "esp_log.h"
 #include "lora.h"
 #include "temperature.h"
-
 #include <math.h>
 #include "sound.h"
 
@@ -30,11 +29,10 @@
 //  {
 // 	 const char *msg = "Hello World";
 // 	 int send_len = strlen(msg);
- 
+
 // 	 lora_send_packet((uint8_t *)msg, send_len);
 // 	 ESP_LOGI("STATE", "%d byte packet sent...", send_len);
 //  }
-
 
 /**
  * @brief Function to initialize the sound system.
@@ -70,6 +68,12 @@ void app_main(void)
 	 * @brief Current state of the LoRa system.
 	 */
 	enum LoRaState state = INIT;
+
+	float avg_temperature = 0.0;
+	float avg_pressure = 0.0;
+	float avg_air_quality = 0.0; // Placeholder for air quality
+	float avg_sound_level = 0.0; // Placeholder for sound level
+
 	while (1)
 	{
 		switch (state)
@@ -82,17 +86,48 @@ void app_main(void)
 				state = ERROR;
 			}
 			lora_set_frequency(868e6);
+			temperature_init();
 			state = ACQUISITION;
 			break;
 		case ACQUISITION:
 			ESP_LOGE(pcTaskGetName(NULL), "Acquisition mode");
-			vTaskDelay(pdMS_TO_TICKS(5000));
+			{
+				float temp_sum = 0.0;
+				float pressure_sum = 0.0;
+				float air_quality_sum = 0.0;
+				float sound_level_sum = 0.0;
+
+				for (int i = 0; i < 10; i++)
+				{
+					temp_sum += temperature_get();
+					pressure_sum += pressure_get();
+					// air_quality_sum += air_quality_get(); 
+					// sound_level_sum += sound_level_get(); 
+					vTaskDelay(pdMS_TO_TICKS(1000)); // Attendre 1 seconde
+				}
+
+				avg_temperature = temp_sum / 10.0;
+				avg_pressure = pressure_sum / 10.0;
+				// avg_air_quality = air_quality_sum / 10.0;
+				// avg_sound_level = sound_level_sum / 10.0;
+
+				printf("Moyenne température: %.2f °C\n", avg_temperature);
+				printf("Moyenne pression: %.2f hPa\n", avg_pressure);
+				// printf("Moyenne qualité de l'air: %.2f\n", avg_air_quality);
+				// printf("Moyenne niveau sonore: %.2f dB\n", avg_sound_level);
+			}
 			state = TRANSMISSION;
 			break;
 		case TRANSMISSION:
 			ESP_LOGE(pcTaskGetName(NULL), "Transmission mode");
-			// sendPacket();
-			vTaskDelay(pdMS_TO_TICKS(5000));
+			{
+				char message[128];
+				snprintf(message, sizeof(message), 
+					"{\"temp\":%.2f,\"press\":%.2f}", 
+					avg_temperature, avg_pressure);
+				lora_send_packet((uint8_t *)message, strlen(message));
+				ESP_LOGI("TRANSMISSION", "Données envoyées: %s", message);
+			}
 			state = SLEEPMODE;
 			break;
 		case SLEEPMODE:
