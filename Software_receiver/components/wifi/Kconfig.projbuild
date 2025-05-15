@@ -2,8 +2,8 @@ menu "WIFI"
 
     config SSID
         string "SSID"
-        default "AndroidAP8072"
+        default "SSID"
     config PASSWORD
         string "PASSWORD"
-        default "123456789"
+        default "PASSWORD"
 endmenu
