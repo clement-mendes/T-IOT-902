@@ -24,4 +24,18 @@ void sound_init(void);
  */
 int sound_read(int16_t *buffer, size_t length);
 
+/**
+ * @brief Measures the current sound level in decibels.
+ * 
+ * @return float The measured sound level in dB.
+ */
+float sound_measure_db(void);
+
+/**
+ * @brief Calculates the average sound level over multiple measurements.
+ * 
+ * @return float The average sound level in dB.
+ */
+float sound_get_average_db(void);
+
 #endif

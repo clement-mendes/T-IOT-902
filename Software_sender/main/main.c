@@ -54,8 +54,8 @@ void app_main(void)
 
 	float avg_temperature = 0.0;
 	float avg_pressure = 0.0;
+	float avg_sound_level = 0.0;
 	// float avg_air_quality = 0.0;
-	float avg_sound_level = 0.0; 
 
 	while (1)
 	{
@@ -78,53 +78,20 @@ void app_main(void)
 			{
 				float temp_sum = 0.0;
 				float pressure_sum = 0.0;
-				float sound_level_sum = 0.0;
+				// float sound_level_sum = 0.0;
 
 				for (int i = 0; i < 10; i++)
 				{
 					temp_sum += temperature_get();
 					pressure_sum += pressure_get();
 					// air_quality_sum += air_quality_get(); 
-					
-					// Read sound data and calculate level
-					int16_t sound_buffer[128];
-					int samples_read = sound_read(sound_buffer, sizeof(sound_buffer)/sizeof(sound_buffer[0]));
-					if (samples_read > 0) {
-						// Debug: print first few samples
-						ESP_LOGI("SOUND", "Samples read: %d", samples_read);
-						ESP_LOGI("SOUND", "First 5 samples: %d, %d, %d, %d, %d", 
-							sound_buffer[0], sound_buffer[1], sound_buffer[2], 
-							sound_buffer[3], sound_buffer[4]);
-
-						// Calculate RMS (Root Mean Square)
-						float sum = 0;
-						for (int j = 0; j < samples_read; j++) {
-							sum += (float)sound_buffer[j] * sound_buffer[j];
-						}
-						float rms = sqrt(sum / samples_read);
-						ESP_LOGI("SOUND", "RMS value: %.2f", rms);
-
-						// Convert to decibels with adjusted reference and scaling
-						float reference = 32768.0; // Maximum value for 16-bit audio
-						float db = 20 * log10f(rms / reference);
-						// Add 90 dB offset to match typical sound level ranges
-						db = db + 90;
-						if (db < 0) db = 0;
-						if (db > 120) db = 120; // Cap at 120 dB for safety
-						
-						ESP_LOGI("SOUND", "Calculated dB: %.2f", db);
-						sound_level_sum += db;
-					} else {
-						ESP_LOGE("SOUND", "Failed to read sound data: %d", samples_read);
-					}
-					
-					vTaskDelay(pdMS_TO_TICKS(1000)); // Attendre 1 seconde
+					vTaskDelay(pdMS_TO_TICKS(1000));
 				}
 
 				avg_temperature = temp_sum / 10.0;
 				avg_pressure = pressure_sum / 10.0;
 				// avg_air_quality = air_quality_sum / 10.0;
-				avg_sound_level = sound_level_sum / 10.0;
+				avg_sound_level = sound_get_average_db();
 
 				printf("Moyenne température: %.2f °C\n", avg_temperature);
 				printf("Moyenne pression: %.2f hPa\n", avg_pressure);
