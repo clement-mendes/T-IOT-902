@@ -26,5 +26,21 @@ services:
     depends_on:
       - postgres
 
+  metabase:
+    image: metabase/metabase
+    container_name: metabase
+    restart: always
+    ports:
+      - "3001:3000" # Metabase sera accessible sur http://localhost:3001
+    depends_on:
+      - postgres
+    environment:
+      MB_DB_TYPE: postgres
+      MB_DB_DBNAME: mydatabase
+      MB_DB_PORT: 5432
+      MB_DB_USER: admin
+      MB_DB_PASS: admin
+      MB_DB_HOST: postgres
+
 volumes:
   postgres_data:
