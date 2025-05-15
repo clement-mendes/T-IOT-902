@@ -45,6 +45,19 @@ Cliquer sur add serveur et renseigner les éléments que nous avons sur postgres
 
 "docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' postgres_db"
 
+Dans pgadmin lancer la query suivant pour créer la table qui va recevoir nos données :
+"
+CREATE TABLE sensors (
+  id SERIAL PRIMARY KEY,
+  sensor_id VARCHAR(10) NOT NULL,
+  temperature FLOAT NULL,
+  pressure FLOAT NULL,
+  airquality INT NULL,
+  sound FLOAT NULL,
+  created_at TIMESTAMP DEFAULT NOW()
+);
+""
+
 ## Ajouter une DB à METABASE :
 
 Rendez vous sur l'adresse de METABASE, par défaut "http://localhost:3000/"

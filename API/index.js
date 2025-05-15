@@ -7,19 +7,34 @@ const port = 3000;
 
 app.use(express.json());
 
-const sensorGMP280 = 56391; // Remplace par ton vrai sensor ID sensors.community
-
 async function sendToSensorsCommunity(data, sensorId) {
   const body = {
     software_version: "nodejs_api_1.0",
-    sensordatavalues: [
-      { value_type: "temperature", value: data.temperature.toString() },
-      { value_type: "pressure", value: data.pressure.toString() },
-      { value_type: "air_quality", value: data.airQuality.toString() },
-      { value_type: "sound_level", value: data.soundLevel.toString() },
-      // Ajoute d'autres si tu en as (ex: humidity, PM1, PM2.5, etc.)
-    ]
+    sensordatavalues: []
   };
+
+  switch(sensorId) {
+    case "011111": // SPH0645
+      if (data.sound !== undefined) {
+        body.sensordatavalues.push({ value_type: "sound", value: data.sound.toString() });
+      }
+      break;
+    case "022222": // BMP280
+      if (data.temperature !== undefined) {
+        body.sensordatavalues.push({ value_type: "temperature", value: data.temperature.toString() });
+      }
+      if (data.pressure !== undefined) {
+        body.sensordatavalues.push({ value_type: "pressure", value: data.pressure.toString() });
+      }
+      break;
+    case "033333": // Dust sensor
+      if (data.airquality !== undefined) {
+        body.sensordatavalues.push({ value_type: "P1", value: data.airquality.toString() }); // P1 = PM10 par convention
+      }
+      break;
+    default:
+      throw new Error(`SensorID inconnu: ${sensorId}`);
+  }
 
   const url = `https://data.sensor.community/airrohr/v1/push-sensor-data/?sensor=${sensorId}`;
 
@@ -36,26 +51,27 @@ async function sendToSensorsCommunity(data, sensorId) {
 }
 
 app.post('/data', async (req, res) => {
-  const { temperature, pressure, airQuality, soundLevel } = req.body;
+  const { sensorId, temperature, pressure, airquality, sound } = req.body;
 
-  if (
-    temperature === undefined ||
-    pressure === undefined ||
-    airQuality === undefined ||
-    soundLevel === undefined
-  ) {
-    return res.status(400).send('Données manquantes');
+  if (!sensorId) {
+    return res.status(400).send('sensorId est obligatoire');
   }
 
+  // Préparer les valeurs à insérer, par défaut null si absent
+  const tempVal = temperature !== undefined ? temperature : null;
+  const presVal = pressure !== undefined ? pressure : null;
+  const airqVal = airquality !== undefined ? airquality : null;
+  const soundVal = sound !== undefined ? sound : null;
+
   try {
-    // 1. Insérer en base PostgreSQL
+    // Insertion en base
     await pool.query(
-      'INSERT INTO sensors (temperature, pressure, air_quality, sound_level) VALUES ($1, $2, $3, $4)',
-      [temperature, pressure, airQuality, soundLevel]
+      `INSERT INTO sensors (sensor_id, temperature, pressure, airquality, sound) 
+       VALUES ($1, $2, $3, $4, $5)`,
+      [sensorId, tempVal, presVal, airqVal, soundVal]
     );
 
-    // 2. Envoyer à sensors.community
-    const sensorId = 12345; // remplace par ton vrai sensor ID sensors.community
+    // Envoi à sensors.community
     await sendToSensorsCommunity(req.body, sensorId);
 
     res.status(201).send('Données enregistrées et envoyées');
