@@ -5,6 +5,7 @@
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "driver/gpio.h"
 #include <math.h> // Include math library (not used in this code but may be needed elsewhere)
 
 /**
@@ -54,13 +55,102 @@
 // ADC Configuration
 #define ADC_UNIT        ADC_UNIT_1
 #define ADC_CHANNEL     ADC_CHANNEL_6  // GPIO34
-#define ADC_ATTEN       ADC_ATTEN_DB_12
-#define SAMPLES_COUNT   64  // Nombre d'échantillons pour la mesure sonore
-#define NUM_SAMPLES     10  // Nombre de mesures pour la moyenne
-#define DELAY_MS        1000 // Délai entre les mesures en ms
+#define ADC_ATTEN       ADC_ATTEN_DB_11  // Increased attenuation for wider voltage range
+#define SAMPLES_COUNT   64   // Reduced sample count for better stability
+#define NUM_SAMPLES     5    // Reduced number of samples
+#define DELAY_MS        100  // Shorter delay between samples
+
+// Désactiver l'alimentation par GPIO
+#define SOUND_VCC_PIN   -1    // Utiliser une alimentation externe stable
+#define SOUND_GND_PIN   -1    // Connecter à GND directement
+#define SOUND_OUT_PIN   34    // ADC1_CHANNEL_6 correspond au GPIO34
+
+// Improved filtering parameters
+#define ADC_SAMPLES_PER_READ 16    // Reduced samples per read
+#define ADC_FILTER_THRESHOLD 1000  // More permissive threshold
+#define MOVING_AVG_SIZE      4     // Smaller moving average window
+#define MIN_VALID_READING    100   // Minimum valid reading threshold
+#define MAX_VALID_READING    4000  // Maximum valid reading threshold
 
 static const char *TAG = "SOUND";
 static adc_oneshot_unit_handle_t adc1_handle;
+static float moving_average_buffer[MOVING_AVG_SIZE];
+static int buffer_index = 0;
+
+bool sound_check_connections(void)
+{
+    ESP_LOGI(TAG, "Vérification des connexions du capteur de son...");
+
+    // Configuration du pin VCC en sortie (si utilisé)
+    if (SOUND_VCC_PIN >= 0) {
+        gpio_config_t io_conf = {
+            .pin_bit_mask = (1ULL << SOUND_VCC_PIN),
+            .mode = GPIO_MODE_OUTPUT,
+            .pull_up_en = GPIO_PULLUP_DISABLE,
+            .pull_down_en = GPIO_PULLDOWN_DISABLE,
+            .intr_type = GPIO_INTR_DISABLE,
+        };
+        gpio_config(&io_conf);
+        gpio_set_level(SOUND_VCC_PIN, 1);  // Alimenter le capteur
+        ESP_LOGI(TAG, "VCC configuré sur GPIO%d", SOUND_VCC_PIN);
+    }
+
+    // Test de lecture ADC
+    int adc_raw;
+    int min_val = 4095;
+    int max_val = 0;
+    int zero_count = 0;
+    int max_count = 0;
+    int mid_range_count = 0;
+    bool signal_variation = false;
+
+    // Prendre plusieurs lectures pour voir si le signal varie
+    ESP_LOGI(TAG, "Test de lecture ADC sur 3 secondes...");
+    for (int i = 0; i < 30; i++) {
+        ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle, ADC_CHANNEL, &adc_raw));
+        
+        if (adc_raw < min_val) min_val = adc_raw;
+        if (adc_raw > max_val) max_val = adc_raw;
+
+        // Compter les types de lectures
+        if (adc_raw == 0) zero_count++;
+        else if (adc_raw == 4095) max_count++;
+        else mid_range_count++;
+
+        ESP_LOGI(TAG, "Lecture ADC #%d: %d", i+1, adc_raw);
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+
+    // Analyser les résultats
+    int variation = max_val - min_val;
+    signal_variation = (variation > 100);
+
+    ESP_LOGI(TAG, "Résultats du diagnostic détaillé:");
+    ESP_LOGI(TAG, "- Pin OUT (GPIO%d): %s", SOUND_OUT_PIN,
+             (min_val < 4095 && max_val > 0) ? "Connecté" : "Problème détecté");
+    ESP_LOGI(TAG, "- Variation du signal: %d (min: %d, max: %d)",
+             variation, min_val, max_val);
+    ESP_LOGI(TAG, "- Statistiques des lectures:");
+    ESP_LOGI(TAG, "  * Lectures à 0: %d/30", zero_count);
+    ESP_LOGI(TAG, "  * Lectures à 4095: %d/30", max_count);
+    ESP_LOGI(TAG, "  * Lectures intermédiaires: %d/30", mid_range_count);
+
+    // Analyse des problèmes potentiels
+    if (zero_count > 5 && max_count > 5) {
+        ESP_LOGE(TAG, "ERREUR: Signal instable - Vérifiez les connexions physiques");
+    }
+    if (max_count > 20) {
+        ESP_LOGE(TAG, "ERREUR: Signal majoritairement saturé - Vérifiez l'alimentation ou réduisez le gain");
+    }
+    if (zero_count > 20) {
+        ESP_LOGE(TAG, "ERREUR: Signal majoritairement nul - Vérifiez l'alimentation");
+    }
+    if (mid_range_count == 0) {
+        ESP_LOGE(TAG, "ERREUR: Aucune lecture intermédiaire - Problème de connexion ou de configuration");
+    }
+
+    return signal_variation && (mid_range_count > 0);
+}
 
 /**
  * @brief Initializes the I2S sound module.
@@ -84,37 +174,86 @@ void sound_init(void)
         .bitwidth = ADC_BITWIDTH_12,
     };
     ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL, &config));
+
+    // Vérifier les connexions au démarrage
+    if (!sound_check_connections()) {
+        ESP_LOGE(TAG, "Problème détecté avec le capteur de son!");
+    }
+}
+
+static float apply_moving_average(float new_value) {
+    moving_average_buffer[buffer_index] = new_value;
+    buffer_index = (buffer_index + 1) % MOVING_AVG_SIZE;
+    
+    float sum = 0;
+    for(int i = 0; i < MOVING_AVG_SIZE; i++) {
+        sum += moving_average_buffer[i];
+    }
+    return sum / MOVING_AVG_SIZE;
+}
+
+static float filter_adc_reading(void)
+{
+    int32_t sum = 0;
+    int valid_readings = 0;
+    int32_t last_reading = -1;
+    
+    // Take multiple quick readings with stabilization delay
+    for(int i = 0; i < ADC_SAMPLES_PER_READ; i++) {
+        int adc_raw;
+        ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle, ADC_CHANNEL, &adc_raw));
+        
+        // Basic validity check
+        if(adc_raw >= MIN_VALID_READING && adc_raw <= MAX_VALID_READING) {
+            // Only include readings that don't change too drastically
+            if(last_reading == -1 || abs(adc_raw - last_reading) < ADC_FILTER_THRESHOLD) {
+                sum += adc_raw;
+                valid_readings++;
+            }
+        }
+        
+        last_reading = adc_raw;
+        esp_rom_delay_us(500);  // Increased delay between readings
+    }
+    
+    if(valid_readings < ADC_SAMPLES_PER_READ / 2) {
+        return -1.0f;  // Not enough valid readings
+    }
+    
+    return (float)sum / valid_readings;
 }
 
 float sound_measure_db(void)
 {
-    int adc_raw;
-    int max_value = 0;
-    int min_value = 4095;
-    float db_level = 30.0f; // Base noise level
+    float db_level = 30.0f;
+    int valid_samples = 0;
+    float sum = 0.0f;
     
-    // Take samples quickly
-    for (int i = 0; i < SAMPLES_COUNT; i++) {
-        ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle, ADC_CHANNEL, &adc_raw));
-        
-        // Track min and max for peak-to-peak calculation
-        if (adc_raw > max_value) max_value = adc_raw;
-        if (adc_raw < min_value) min_value = adc_raw;
-        
-        esp_rom_delay_us(50);
+    // Take multiple filtered samples with longer delays
+    for(int i = 0; i < SAMPLES_COUNT; i++) {
+        float filtered_value = filter_adc_reading();
+        if(filtered_value >= 0) {
+            sum += filtered_value;
+            valid_samples++;
+        }
+        esp_rom_delay_us(1000);  // 1ms delay between samples
     }
     
-    // Calculate peak-to-peak amplitude
-    int peak_to_peak = max_value - min_value;
-    
-    // Convert to decibels if we have valid readings
-    if (peak_to_peak > 0) {
-        db_level = 20 * log10f(peak_to_peak / 100.0f);
-        db_level = db_level + 50;  // Offset for 0dB attenuation
+    // Calculate average of valid readings
+    if(valid_samples > 0) {
+        float avg_value = sum / valid_samples;
+        avg_value = apply_moving_average(avg_value);
         
-        // Clamp values to reasonable range
-        if (db_level < 30) db_level = 30;
-        if (db_level > 120) db_level = 120;
+        // Improved dB calculation with better scaling
+        if(avg_value > 0) {
+            // Normalize to 0-1 range and calculate dB
+            float normalized = (avg_value - MIN_VALID_READING) / (MAX_VALID_READING - MIN_VALID_READING);
+            db_level = 30.0f + (normalized * 60.0f);  // Scale to 30-90 dB range
+            
+            // Apply soft limiting
+            if(db_level < 30) db_level = 30;
+            if(db_level > 90) db_level = 90;
+        }
     }
     
     return db_level;
