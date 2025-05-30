@@ -148,6 +148,16 @@ static int16_t dig_P7 = 15500;
 static int16_t dig_P8 = -14600;
 static int16_t dig_P9 = 6000;
 
+// Compensation parameters for humidity
+static uint8_t dig_H1 = 75;
+static int16_t dig_H2 = 362;
+static uint8_t dig_H3 = 0;
+static int16_t dig_H4 = 334;
+static int16_t dig_H5 = 50;
+static uint8_t dig_H6 = 30;
+
+#define TEMPERATURE_OFFSET -7.0 
+
 /**
  * @brief Retrieves the current temperature reading.
  * 
@@ -177,7 +187,7 @@ float temperature_get(void)
     t_fine = var1 + var2;
     float temperature = (t_fine * 5 + 128) >> 8;
     
-    return temperature / 100.0;
+    return (temperature / 100.0) + TEMPERATURE_OFFSET; // Apply offset correction
 }
 
 /**
@@ -221,4 +231,36 @@ float pressure_get(void)
     p = ((p + var1 + var2) >> 8) + (((int64_t)dig_P7) << 4);
     
     return ((float)p) / 25600.0; // Return pressure in hPa
+}
+
+/**
+ * @brief Retrieves the current humidity value.
+ * 
+ * This function reads the humidity data from the BMP280 sensor and applies
+ * the necessary compensation formula to return the humidity in percentage.
+ * 
+ * @return float The current humidity in percentage (%).
+ */
+float humidity_get(void)
+{
+    uint8_t data[8];
+    // Read 8 bytes starting from the start register (humidity, pressure, and temperature)
+    esp_err_t err = bme280_read_reg(REG_DATA_START, data, 8);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Échec de la lecture des données du capteur");
+        return 0.0;
+    }
+
+    // Bytes [6,7] contain the raw humidity
+    int32_t adc_H = ((int32_t)data[6] << 8) | ((int32_t)data[7]);
+
+    // Humidity compensation formula (algorithm provided in the datasheet)
+    int32_t var1 = t_fine - 76800;
+    var1 = (((adc_H << 14) - (((int32_t)dig_H4) << 20) - (((int32_t)dig_H5) * var1)) + 16384) >> 15;
+    var1 = var1 * (((((((var1 * ((int32_t)dig_H6)) >> 10) * (((var1 * ((int32_t)dig_H3)) >> 11) + 32768)) >> 10) + 2097152) * ((int32_t)dig_H2) + 8192) >> 14);
+    var1 = var1 - (((((var1 >> 15) * (var1 >> 15)) >> 7) * ((int32_t)dig_H1)) >> 4);
+    var1 = (var1 < 0 ? 0 : var1);
+    var1 = (var1 > 419430400 ? 419430400 : var1);
+
+    return (float)(var1 >> 12) / 1024.0; // Return humidity in percentage
 }
