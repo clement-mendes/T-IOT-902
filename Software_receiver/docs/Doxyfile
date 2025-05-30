@@ -991,7 +991,7 @@ WARN_LOGFILE           =
 # spaces. See also FILE_PATTERNS and EXTENSION_MAPPING
 # Note: If this tag is empty the current directory is searched.
 
-INPUT                  = ../main ../components/example/src
+INPUT                  = ../main ../components/lora/src ../components/lora/include ../components/wifi/src ../components/wifi/include
 
 # This tag can be used to specify the character encoding of the source files
 # that Doxygen parses. Internally Doxygen uses the UTF-8 encoding. Doxygen uses
@@ -2750,7 +2750,7 @@ TEMPLATE_RELATIONS     = NO
 # YES then Doxygen will generate a graph for each documented file showing the
 # direct and indirect include dependencies of the file with other documented
 # files. Explicit enabling an include graph, when INCLUDE_GRAPH is is set to NO,
-# can be accomplished by means of the command \includegraph. Disabling an
+# can be accomplished by means of the command \includegraph. Disabling a
 # include graph can be accomplished by means of the command \hideincludegraph.
 # The default value is: YES.
 # This tag requires that the tag HAVE_DOT is set to YES.
