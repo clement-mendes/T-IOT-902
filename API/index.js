@@ -55,8 +55,12 @@ async function sendToSensorsCommunity(data, sensorId) {
 
   const response = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Pin': xPin.toString(),
+      'X-Sensor': xSensor
+    },
+    body: JSON.stringify(body)
   });
 
   if (!response.ok) {
@@ -146,6 +150,7 @@ app.post('/espdata', async (req, res) => {
   }
 });
 
+// Start the Express API server
 app.listen(port, () => {
   console.log(`API running at http://localhost:${port}`);
 });
