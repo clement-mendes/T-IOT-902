@@ -115,3 +115,13 @@ void wifi_init_sta(void)
     // Log that Wi-Fi has been initialized
     ESP_LOGI(TAG, "WiFi initialized in station mode.");
 }
+
+/**
+ * @brief Returns true if the ESP32 is connected to Wi-Fi, false otherwise.
+ */
+bool wifi_is_connected(void)
+{
+    // Check if the WIFI_CONNECTED_BIT is set in the event group
+    EventBits_t bits = xEventGroupGetBits(s_wifi_event_group);
+    return (bits & WIFI_CONNECTED_BIT) != 0;
+}
