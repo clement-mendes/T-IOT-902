@@ -30,4 +30,14 @@ float temperature_get(void);
  */
 float pressure_get(void);
 
+/**
+ * @brief Reads and compensates the humidity from the BME280 sensor.
+ * 
+ * @return float The humidity in percentage (%).
+ * 
+ * This function retrieves the raw humidity data from the BME280 sensor,
+ * applies compensation algorithms, and returns the humidity in %.
+ */
+float humidity_get(void);
+
 #endif // TEMPERATURE_H

@@ -1,26 +1,57 @@
 const express = require('express');
-const fetch = require('node-fetch');
+// Dynamically import node-fetch for ESM compatibility
+let fetch;
+(async () => {
+  fetch = (await import('node-fetch')).default;
+})();
 const pool = require('./db'); // PostgreSQL connection
 
 const app = express();
 const port = 3000;
 
-app.use(express.json()); // Parse incoming JSON payloads
-
-//SENSORID = esp32-868600 
-//Index = 56391
+app.use(express.json());
 
 /**
- * Sends data to Sensor.Community via HTTP POST.
- * @param {string} sensorId - The internal ID of the sensor (custom).
- * @param {number} xPin - The X-Pin value (defines sensor type: 1 = PM, 11 = temp, etc.).
- * @param {string} xSensor - Unique Sensor.Community sensor identifier (e.g., esp8266-011111).
- * @param {Array} values - Array of { value_type, value } objects.
+ * Send sensor data to the Sensor Community API.
+ * @param {Object} data - The sensor data to send.
+ * @param {string} sensorId - The sensor ID for Sensor Community.
  */
-async function sendToSensorCommunity(sensorId, xPin, xSensor, values) {
-  const url = 'https://api.sensor.community/v1/push-sensor-data/';
+async function sendToSensorsCommunity(data, sensorId) {
+  // Wait for fetch to be loaded if not already
+  if (!fetch) {
+    fetch = (await import('node-fetch')).default;
+  }
 
-  const body = values;
+  const body = {
+    software_version: "nodejs_api_1.0",
+    sensordatavalues: []
+  };
+
+  // Build the payload according to the sensor type
+  switch(sensorId) {
+    case "011111": // SPH0645 (Sound sensor)
+      if (data.sound !== undefined) {
+        body.sensordatavalues.push({ value_type: "sound", value: data.sound.toString() });
+      }
+      break;
+    case "022222": // BMP280 (Temperature/Pressure/Humidity sensor)
+      if (data.temperature !== undefined) {
+        body.sensordatavalues.push({ value_type: "temperature", value: data.temperature.toString() });
+      }
+      if (data.pressure !== undefined) {
+        body.sensordatavalues.push({ value_type: "pressure", value: data.pressure.toString() });
+      }
+      break;
+    case "033333": // Dust sensor
+      if (data.airquality !== undefined) {
+        body.sensordatavalues.push({ value_type: "P1", value: data.airquality.toString() }); // P1 = PM10 by convention
+      }
+      break;
+    default:
+      throw new Error(`Unknown SensorID: ${sensorId}`);
+  }
+
+  const url = `https://data.sensor.community/airrohr/v1/push-sensor-data/?sensor=${sensorId}`;
 
   const response = await fetch(url, {
     method: 'POST',
@@ -34,101 +65,85 @@ async function sendToSensorCommunity(sensorId, xPin, xSensor, values) {
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`Sensor.Community error: ${response.status} ${text}`);
+    throw new Error(`Sensor Community error: ${response.status} ${text}`);
   }
 }
 
-/**
- * Returns the full Sensor.Community-compatible sensor ID.
- * @param {string} sensorId - Custom internal ID
- */
-function getXSensor(sensorId) {
-  return `esp8266-${sensorId}`;
-}
+// New route to receive an array of measurements from the ESP receiver
+app.post('/espdata', async (req, res) => {
+  const dataArray = req.body;
+  // Log received data for debugging
+  console.log('Data received from ESP:', dataArray);
 
-/**
- * Prepares and sends sensor data to Sensor.Community depending on available fields.
- * Splits data per sensor type using different X-Pins.
- * @param {string} sensorId 
- * @param {object} data - Payload containing temperature, pressure, airquality, sound
- */
-async function handleSensorCommunityUpload(sensorId, data) {
-  const xSensor = getXSensor(sensorId);
-
-  // Air quality (dust)
-  if (data.airquality !== undefined) {
-    await sendToSensorCommunity(
-      sensorId,
-      1, // PM data
-      xSensor,
-      [
-        { value_type: "P1", value: data.airquality.toString() } // PM10
-      ]
-    );
+  // Check that the request body is a non-empty JSON array
+  if (!Array.isArray(dataArray) || dataArray.length === 0) {
+    return res.status(400).send('Body must be a non-empty JSON array');
   }
 
-  // Temperature and pressure (BMP280)
-  if (data.temperature !== undefined || data.pressure !== undefined) {
-    const values = [];
-    if (data.temperature !== undefined) {
-      values.push({ value_type: "temperature", value: data.temperature.toString() });
-    }
-    if (data.pressure !== undefined) {
-      values.push({ value_type: "pressure", value: data.pressure.toString() });
-    }
-
-    await sendToSensorCommunity(
-      sensorId,
-      11, // environmental sensor
-      xSensor,
-      values
-    );
-  }
-
-  // Sound (SPH0645)
-  if (data.sound !== undefined) {
-    await sendToSensorCommunity(
-      sensorId,
-      13, // not official, but accepted
-      xSensor,
-      [
-        { value_type: "noise", value: data.sound.toString() }
-      ]
-    );
-  }
-}
-
-/**
- * POST /data endpoint
- * Accepts a JSON payload with sensor values and:
- *  - stores them in PostgreSQL
- *  - sends them to Sensor.Community
- */
-app.post('/data', async (req, res) => {
-  const { sensorId, temperature, pressure, airquality, sound } = req.body;
-
-  if (!sensorId) {
-    return res.status(400).send('sensorId is required');
-  }
-
-  // Set undefined fields to null for database compatibility
-  const tempVal = temperature !== undefined ? temperature : null;
-  const presVal = pressure !== undefined ? pressure : null;
-  const airqVal = airquality !== undefined ? airquality : null;
-  const soundVal = sound !== undefined ? sound : null;
+  // Fixed sensor IDs for each type
+  const ENV_SENSOR_ID = "022222"; // temp, hum, pressure
+  const SOUND_SENSOR_ID = "011111"; // sound
+  const DUST_SENSOR_ID = "033333"; // dust/airquality
 
   try {
-    // Store in local PostgreSQL database
-    await pool.query(
-      `INSERT INTO sensors (sensor_id, temperature, pressure, airquality, sound) 
-       VALUES ($1, $2, $3, $4, $5)`,
-      [sensorId, tempVal, presVal, airqVal, soundVal]
-    );
+    for (const data of dataArray) {
+      // Insert and send for temp/hum/pressure
+      if (
+        data.temp !== undefined ||
+        data.hum !== undefined ||
+        data.press !== undefined
+      ) {
+        const tempVal = data.temp !== undefined ? data.temp : null;
+        const presVal = data.press !== undefined ? data.press : null;
+        const humVal = data.hum !== undefined ? data.hum : null;
 
-    // Forward data to Sensor.Community
-    await handleSensorCommunityUpload(sensorId, req.body);
+        // Insert environmental data into the database
+        await pool.query(
+          `INSERT INTO sensors (sensor_id, temperature, pressure, humidity) 
+           VALUES ($1, $2, $3, $4)`,
+          [ENV_SENSOR_ID, tempVal, presVal, humVal]
+        );
 
-    res.status(201).send('Data stored and sent');
+        // Send environmental data to Sensor Community
+        await sendToSensorsCommunity(
+          { temperature: tempVal, pressure: presVal, humidity: humVal },
+          ENV_SENSOR_ID
+        );
+      }
+
+      // Insert and send for sound
+      if (data.sound !== undefined) {
+        const soundVal = data.sound;
+        // Insert sound data into the database
+        await pool.query(
+          `INSERT INTO sensors (sensor_id, sound) VALUES ($1, $2)`,
+          [SOUND_SENSOR_ID, soundVal]
+        );
+
+        // Send sound data to Sensor Community
+        await sendToSensorsCommunity(
+          { sound: soundVal },
+          SOUND_SENSOR_ID
+        );
+      }
+
+      // Insert and send for dust/airquality
+      if (data.airquality !== undefined) {
+        const airqVal = data.airquality;
+        // Insert air quality data into the database
+        await pool.query(
+          `INSERT INTO sensors (sensor_id, airquality) VALUES ($1, $2)`,
+          [DUST_SENSOR_ID, airqVal]
+        );
+
+        // Send air quality data to Sensor Community
+        await sendToSensorsCommunity(
+          { airquality: airqVal },
+          DUST_SENSOR_ID
+        );
+      }
+    }
+    res.status(201).send('ESP data saved');
   } catch (err) {
     console.error(err);
     res.status(500).send('Server error');
