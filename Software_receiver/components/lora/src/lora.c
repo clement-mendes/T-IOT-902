@@ -1,3 +1,11 @@
+/**
+ * @file lora.c
+ * @brief LoRa driver implementation for ESP32.
+ *
+ * This file provides functions to initialize, configure, transmit, and receive data
+ * using a LoRa transceiver (e.g., SX1276) via SPI on ESP32.
+ */
+
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -92,7 +100,8 @@ static int _sf = 0;
 
 
 /**
- * Write a value to a register.  * @param reg Register index.
+ * @brief Write a value to a LoRa register.
+ * @param reg Register index.
  * @param val Value to write.
  */
 void 
@@ -118,10 +127,10 @@ lora_write_reg(int reg, int val)
 }
 
 /**
- * Write a buffer to a register.
+ * @brief Write a buffer to a LoRa register.
  * @param reg Register index.
- * @param val Value to write.
- * @param len Byte length to write.
+ * @param val Buffer to write.
+ * @param len Number of bytes to write.
  */
 void
 lora_write_reg_buffer(int reg, uint8_t *val, int len)
@@ -151,7 +160,7 @@ lora_write_reg_buffer(int reg, uint8_t *val, int len)
 }
 
 /**
- * Read the current value of a register.
+ * @brief Read the current value of a LoRa register.
  * @param reg Register index.
  * @return Value of the register.
  */
@@ -179,10 +188,10 @@ lora_read_reg(int reg)
 }
 
 /**
- * Read the current value of a register.
+ * @brief Read a buffer from a LoRa register.
  * @param reg Register index.
- * @return Value of the register.
- * @param len Byte length to read.
+ * @param val Buffer to store read data.
+ * @param len Number of bytes to read.
  */
 void
 lora_read_reg_buffer(int reg, uint8_t *val, int len)
@@ -218,7 +227,7 @@ lora_read_reg_buffer(int reg, uint8_t *val, int len)
 }
 
 /**
- * Perform physical reset on the Lora chip
+ * @brief Perform a hardware reset on the LoRa chip.
  */
 void 
 lora_reset(void)
@@ -230,7 +239,7 @@ lora_reset(void)
 }
 
 /**
- * Sets the radio transceiver in idle mode.
+ * @brief Set the LoRa transceiver to idle mode.
  * Must be used to change registers and access the FIFO.
  */
 void 
@@ -240,7 +249,7 @@ lora_idle(void)
 }
 
 /**
- * Sets the radio transceiver in sleep mode.
+ * @brief Set the LoRa transceiver to sleep mode.
  * Low power consumption and FIFO is lost.
  */
 void 
@@ -250,7 +259,7 @@ lora_sleep(void)
 }
 
 /**
- * Sets the radio transceiver in receive mode.
+ * @brief Set the LoRa transceiver to receive mode.
  * Incoming packets will be received.
  */
 void 
@@ -260,8 +269,8 @@ lora_receive(void)
 }
 
 /**
- * Configure power level for transmission
- * @param level 2-17, from least to most power
+ * @brief Configure power level for transmission.
+ * @param level Power level (2-17), from least to most power.
  */
 void 
 lora_set_tx_power(int level)
@@ -273,8 +282,8 @@ lora_set_tx_power(int level)
 }
 
 /**
- * Set carrier frequency.
- * @param frequency Frequency in Hz
+ * @brief Set carrier frequency.
+ * @param frequency Frequency in Hz.
  */
 void 
 lora_set_frequency(long frequency)
@@ -289,8 +298,8 @@ lora_set_frequency(long frequency)
 }
 
 /**
- * Set spreading factor.
- * @param sf 6-12, Spreading factor to use.
+ * @brief Set spreading factor.
+ * @param sf Spreading factor (6-12).
  */
 void 
 lora_set_spreading_factor(int sf)
@@ -311,7 +320,8 @@ lora_set_spreading_factor(int sf)
 }
 
 /**
- * Get spreading factor.
+ * @brief Get spreading factor.
+ * @return Current spreading factor.
  */
 int 
 lora_get_spreading_factor(void)
@@ -320,8 +330,8 @@ lora_get_spreading_factor(void)
 }
 
 /**
- * Set bandwidth (bit rate)
- * @param sbw Signal bandwidth(0 to 9)
+ * @brief Set bandwidth (bit rate).
+ * @param sbw Signal bandwidth (0 to 9).
  */
 void 
 lora_set_bandwidth(int sbw)
@@ -333,8 +343,8 @@ lora_set_bandwidth(int sbw)
 }
 
 /**
- * Get bandwidth (bit rate)
- * @param sbw Signal bandwidth(0 to 9)
+ * @brief Get bandwidth (bit rate).
+ * @return Signal bandwidth (0 to 9).
  */
 int 
 lora_get_bandwidth(void)
@@ -348,9 +358,9 @@ lora_get_bandwidth(void)
 }
 
 /**
- * Set coding rate 
- * @param cr Coding Rate(1 to 4)
- */ 
+ * @brief Set coding rate.
+ * @param cr Coding Rate (1 to 4).
+ */
 void 
 lora_set_coding_rate(int cr)
 {
@@ -365,8 +375,9 @@ lora_set_coding_rate(int cr)
 }
 
 /**
- * Get coding rate 
- */ 
+ * @brief Get coding rate.
+ * @return Coding Rate (1 to 4).
+ */
 int 
 lora_get_coding_rate(void)
 {
@@ -374,7 +385,7 @@ lora_get_coding_rate(void)
 }
 
 /**
- * Enable appending/verifying packet CRC.
+ * @brief Enable appending/verifying packet CRC.
  */
 void 
 lora_enable_crc(void)
@@ -383,7 +394,7 @@ lora_enable_crc(void)
 }
 
 /**
- * Disable appending/verifying packet CRC.
+ * @brief Disable appending/verifying packet CRC.
  */
 void 
 lora_disable_crc(void)
@@ -392,7 +403,8 @@ lora_disable_crc(void)
 }
 
 /**
- * Perform hardware initialization.
+ * @brief Perform hardware initialization of the LoRa module.
+ * @return 1 if successful, 0 if failed.
  */
 int 
 lora_init(void)
@@ -468,7 +480,7 @@ lora_init(void)
 }
 
 /**
- * Read a received packet.
+ * @brief Read a received packet from LoRa.
  * @param buf Buffer for the data.
  * @param size Available size in buffer (bytes).
  * @return Number of bytes received (zero if no packet available).
@@ -509,7 +521,8 @@ lora_receive_packet(uint8_t *buf, int size)
 }
 
 /**
- * Returns non-zero if there is data to read (packet received).
+ * @brief Returns non-zero if there is data to read (packet received).
+ * @return 1 if a packet is received, 0 otherwise.
  */
 int
 lora_received(void)
@@ -519,7 +532,8 @@ lora_received(void)
 }
 
 /**
- * Returns RegIrqFlags.
+ * @brief Returns RegIrqFlags.
+ * @return IRQ flags register value.
  */
 int
 lora_get_irq(void)
@@ -527,9 +541,9 @@ lora_get_irq(void)
    return (lora_read_reg(REG_IRQ_FLAGS));
 }
 
-
 /**
- * Return lost send packet count.
+ * @brief Return lost send packet count.
+ * @return Number of lost packets.
  */
 int 
 lora_packet_lost(void)
@@ -538,7 +552,8 @@ lora_packet_lost(void)
 }
 
 /**
- * Return last packet's RSSI.
+ * @brief Return last packet's RSSI.
+ * @return RSSI value.
  */
 int 
 lora_packet_rssi(void)
@@ -548,7 +563,8 @@ lora_packet_rssi(void)
 
 
 /**
- * Return last packet's SNR (signal to noise ratio).
+ * @brief Return last packet's SNR (signal to noise ratio).
+ * @return SNR value.
  */
 float 
 lora_packet_snr(void)
@@ -557,7 +573,7 @@ lora_packet_snr(void)
 }
 
 /**
- * Shutdown hardware.
+ * @brief Shutdown LoRa hardware.
  */
 void 
 lora_close(void)

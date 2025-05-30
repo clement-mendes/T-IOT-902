@@ -1,3 +1,11 @@
+/**
+ * @file main.c
+ * @brief Main application for LoRa sender (ESP32).
+ *
+ * This application acquires sensor data, computes averages, and sends the results via LoRa.
+ * It uses FreeRTOS tasks for sensor acquisition and a state machine for operation flow.
+ */
+
 #include <stdio.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
@@ -11,14 +19,22 @@
 // #include "sound.h"
 // #include "air_quality.h"
 
+/**
+ * @struct CapteurContext
+ * @brief Context structure for sensor acquisition tasks.
+ */
 typedef struct {
-    float *buffer;
-    int sample_count;
-    float average;
-    SemaphoreHandle_t done_semaphore;
-    SemaphoreHandle_t start_signal;
+    float *buffer;                  ///< Buffer to store sensor samples
+    int sample_count;               ///< Number of samples to acquire
+    float average;                  ///< Computed average value
+    SemaphoreHandle_t done_semaphore;   ///< Semaphore to signal task completion
+    SemaphoreHandle_t start_signal;     ///< Semaphore to trigger task start
 } CapteurContext;
 
+/**
+ * @brief Task for temperature acquisition and averaging.
+ * @param pvParameters Pointer to CapteurContext.
+ */
 void temperature_task(void *pvParameters) {
     CapteurContext *ctx = (CapteurContext *)pvParameters;
     while (1) {
@@ -37,6 +53,10 @@ void temperature_task(void *pvParameters) {
     }
 }
 
+/**
+ * @brief Task for pressure acquisition and averaging.
+ * @param pvParameters Pointer to CapteurContext.
+ */
 void pressure_task(void *pvParameters) {
     CapteurContext *ctx = (CapteurContext *)pvParameters;
     while (1) {
@@ -55,6 +75,10 @@ void pressure_task(void *pvParameters) {
     }
 }
 
+/**
+ * @brief Task for humidity acquisition and averaging.
+ * @param pvParameters Pointer to CapteurContext.
+ */
 void humidity_task(void *pvParameters) {
     CapteurContext *ctx = (CapteurContext *)pvParameters;
     while (1) {
@@ -74,32 +98,41 @@ void humidity_task(void *pvParameters) {
 }
 
 /*
-// Pour ajouter plus tard :
+// To add later:
 void sound_task(void *pvParameters) { ... }
 void air_quality_task(void *pvParameters) { ... }
 */
 
+/**
+ * @brief Main application entry point.
+ *
+ * Implements a state machine for sensor acquisition, LoRa transmission, and sleep management.
+ */
 void app_main(void) {
+    /**
+     * @enum LoRaState
+     * @brief State machine for LoRa sender logic.
+     */
     enum LoRaState {
-        INIT,
-        ACQUISITION,
-        TRANSMISSION,
-        SLEEPMODE,
-        WAKEUP,
-        ERROR
+        INIT,           ///< Initialization state
+        ACQUISITION,    ///< Sensor acquisition state
+        TRANSMISSION,   ///< LoRa transmission state
+        SLEEPMODE,      ///< Deep sleep state
+        WAKEUP,         ///< Wakeup state
+        ERROR           ///< Error state
     };
 
     static RTC_DATA_ATTR enum LoRaState state = INIT;
 
-    // Définir combien d’échantillons on veut (1 par seconde pendant 10 sec)
+    // Define number of samples (1 per second for 10 seconds)
     const int sample_count = 10;
 
-    // Buffers alloués sur la pile
+    // Buffers allocated on the stack
     float temp_buffer[sample_count];
     float pressure_buffer[sample_count];
-    float humidity_buffer[sample_count]; // Buffer pour l'humidité
+    float humidity_buffer[sample_count]; // Buffer for humidity
 
-    // Contextes capteurs
+    // Sensor contexts
     CapteurContext temp_ctx = {
         .buffer = temp_buffer,
         .sample_count = sample_count,
@@ -121,7 +154,7 @@ void app_main(void) {
         .start_signal = xSemaphoreCreateBinary()
     };
 
-    // Création des tâches capteurs
+    // Create sensor tasks
     TaskHandle_t temp_task_handle;
     TaskHandle_t pressure_task_handle;
     TaskHandle_t humidity_task_handle;
@@ -135,7 +168,7 @@ void app_main(void) {
         case INIT:
             ESP_LOGI("STATE", "INIT");
             if (lora_init() == 0) {
-                ESP_LOGE("LoRa", "Module LoRa non détecté.");
+                ESP_LOGE("LoRa", "LoRa module not detected.");
                 state = ERROR;
                 break;
             }
@@ -148,22 +181,22 @@ void app_main(void) {
         case ACQUISITION:
             ESP_LOGI("STATE", "ACQUISITION");
 
-            // Reprendre les tâches capteurs
+            // Resume sensor tasks
             vTaskResume(temp_task_handle);
             vTaskResume(pressure_task_handle);
             vTaskResume(humidity_task_handle);
 
-            // Déclencher les mesures synchronisées
+            // Trigger synchronized measurements
             xSemaphoreGive(temp_ctx.start_signal);
             xSemaphoreGive(pressure_ctx.start_signal);
             xSemaphoreGive(humidity_ctx.start_signal);
 
-            // Attendre que chaque tâche ait fini
+            // Wait for each task to finish
             xSemaphoreTake(temp_ctx.done_semaphore, portMAX_DELAY);
             xSemaphoreTake(pressure_ctx.done_semaphore, portMAX_DELAY);
             xSemaphoreTake(humidity_ctx.done_semaphore, portMAX_DELAY);
 
-            printf("Température moyenne : %.2f°C | Pression moyenne : %.2f hPa | Humidité moyenne : %.2f%%\n",
+            printf("Average temperature: %.2f°C | Average pressure: %.2f hPa | Average humidity: %.2f%%\n",
                    temp_ctx.average, pressure_ctx.average, humidity_ctx.average);
 
             state = TRANSMISSION;
@@ -177,7 +210,7 @@ void app_main(void) {
                          "{\"temp\":%.2f,\"press\":%.2f,\"hum\":%.2f}",
                          temp_ctx.average, pressure_ctx.average, humidity_ctx.average);
                 lora_send_packet((uint8_t *)message, strlen(message));
-                ESP_LOGI("LoRa", "Message envoyé : %s", message);
+                ESP_LOGI("LoRa", "Message sent: %s", message);
             }
             state = SLEEPMODE;
             break;
@@ -196,12 +229,12 @@ void app_main(void) {
             ESP_LOGI("STATE", "WAKEUP");
             {
                 esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
-                ESP_LOGI("WAKEUP", "Raison du réveil : %d", cause);
+                ESP_LOGI("WAKEUP", "Wakeup cause: %d", cause);
             }
             break;
 
         case ERROR:
-            ESP_LOGE("STATE", "ERREUR - redémarrage dans 5 sec");
+            ESP_LOGE("STATE", "ERROR - restarting in 5 sec");
             vTaskDelay(pdMS_TO_TICKS(5000));
             state = INIT;
             break;
