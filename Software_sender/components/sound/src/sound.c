@@ -55,7 +55,7 @@
 // ADC Configuration
 #define ADC_UNIT        ADC_UNIT_1
 #define ADC_CHANNEL     ADC_CHANNEL_6  // GPIO34
-#define ADC_ATTEN       ADC_ATTEN_DB_11  // Increased attenuation for wider voltage range
+#define ADC_ATTEN       ADC_ATTEN_DB_12  // Increased attenuation for wider voltage range
 #define SAMPLES_COUNT   64   // Reduced sample count for better stability
 #define NUM_SAMPLES     5    // Reduced number of samples
 #define DELAY_MS        100  // Shorter delay between samples
@@ -166,7 +166,16 @@ void sound_init(void)
         .unit_id = ADC_UNIT,
         .ulp_mode = ADC_ULP_MODE_DISABLE,
     };
-    ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config, &adc1_handle));
+    
+    // Vérifier si l'ADC est déjà initialisé
+    esp_err_t err = adc_oneshot_new_unit(&init_config, &adc1_handle);
+    if (err == ESP_ERR_NOT_FOUND) {
+        // L'ADC est déjà initialisé, on continue
+        ESP_LOGI(TAG, "ADC déjà initialisé");
+    } else if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Erreur d'initialisation ADC: %d", err);
+        return;
+    }
 
     // Channel configuration
     adc_oneshot_chan_cfg_t config = {
