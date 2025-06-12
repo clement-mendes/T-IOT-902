@@ -2,6 +2,24 @@
 #ifndef TEMPERATURE_H
 #define TEMPERATURE_H
 
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/semphr.h"
+#include <stdint.h> 
+
+
+/**
+ * @struct CapteurContext
+ * @brief Context structure for sensor acquisition tasks.
+ */
+typedef struct {
+    float *buffer;                  ///< Buffer to store sensor samples
+    int sample_count;               ///< Number of samples to acquire
+    float average;                  ///< Computed average value
+    SemaphoreHandle_t done_semaphore;   ///< Semaphore to signal task completion
+    SemaphoreHandle_t start_signal;     ///< Semaphore to trigger task start
+} CapteurContext;
+
 /**
  * @brief Initializes the I²C interface and configures the BME280 sensor.
  * 
@@ -39,5 +57,23 @@ float pressure_get(void);
  * applies compensation algorithms, and returns the humidity in %.
  */
 float humidity_get(void);
+
+/**
+ * @brief Task for temperature acquisition and averaging.
+ * @param pvParameters Pointer to CapteurContext.
+ */
+void temperature_task(void *pvParameters);
+
+/**
+ * @brief Task for pressure acquisition and averaging.
+ * @param pvParameters Pointer to CapteurContext.
+ */
+void pressure_task(void *pvParameters);
+
+/**
+ * @brief Task for humidity acquisition and averaging.
+ * @param pvParameters Pointer to CapteurContext.
+ */
+void humidity_task(void *pvParameters);
 
 #endif // TEMPERATURE_H

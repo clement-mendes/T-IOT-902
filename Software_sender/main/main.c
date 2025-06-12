@@ -20,90 +20,6 @@
 // #include "air_quality.h"
 
 /**
- * @struct CapteurContext
- * @brief Context structure for sensor acquisition tasks.
- */
-typedef struct {
-    float *buffer;                  ///< Buffer to store sensor samples
-    int sample_count;               ///< Number of samples to acquire
-    float average;                  ///< Computed average value
-    SemaphoreHandle_t done_semaphore;   ///< Semaphore to signal task completion
-    SemaphoreHandle_t start_signal;     ///< Semaphore to trigger task start
-} CapteurContext;
-
-/**
- * @brief Task for temperature acquisition and averaging.
- * @param pvParameters Pointer to CapteurContext.
- */
-void temperature_task(void *pvParameters) {
-    CapteurContext *ctx = (CapteurContext *)pvParameters;
-    while (1) {
-        xSemaphoreTake(ctx->start_signal, portMAX_DELAY);
-        for (int i = 0; i < ctx->sample_count; i++) {
-            ctx->buffer[i] = temperature_get();
-            vTaskDelay(pdMS_TO_TICKS(1000));
-        }
-        ctx->average = 0.0;
-        for (int i = 0; i < ctx->sample_count; i++) {
-            ctx->average += ctx->buffer[i];
-        }
-        ctx->average /= ctx->sample_count;
-        xSemaphoreGive(ctx->done_semaphore);
-        vTaskSuspend(NULL);
-    }
-}
-
-/**
- * @brief Task for pressure acquisition and averaging.
- * @param pvParameters Pointer to CapteurContext.
- */
-void pressure_task(void *pvParameters) {
-    CapteurContext *ctx = (CapteurContext *)pvParameters;
-    while (1) {
-        xSemaphoreTake(ctx->start_signal, portMAX_DELAY);
-        for (int i = 0; i < ctx->sample_count; i++) {
-            ctx->buffer[i] = pressure_get();
-            vTaskDelay(pdMS_TO_TICKS(1000));
-        }
-        ctx->average = 0.0;
-        for (int i = 0; i < ctx->sample_count; i++) {
-            ctx->average += ctx->buffer[i];
-        }
-        ctx->average /= ctx->sample_count;
-        xSemaphoreGive(ctx->done_semaphore);
-        vTaskSuspend(NULL);
-    }
-}
-
-/**
- * @brief Task for humidity acquisition and averaging.
- * @param pvParameters Pointer to CapteurContext.
- */
-void humidity_task(void *pvParameters) {
-    CapteurContext *ctx = (CapteurContext *)pvParameters;
-    while (1) {
-        xSemaphoreTake(ctx->start_signal, portMAX_DELAY);
-        for (int i = 0; i < ctx->sample_count; i++) {
-            ctx->buffer[i] = humidity_get();
-            vTaskDelay(pdMS_TO_TICKS(1000));
-        }
-        ctx->average = 0.0;
-        for (int i = 0; i < ctx->sample_count; i++) {
-            ctx->average += ctx->buffer[i];
-        }
-        ctx->average /= ctx->sample_count;
-        xSemaphoreGive(ctx->done_semaphore);
-        vTaskSuspend(NULL);
-    }
-}
-
-/*
-// To add later:
-void sound_task(void *pvParameters) { ... }
-void air_quality_task(void *pvParameters) { ... }
-*/
-
-/**
  * @brief Main application entry point.
  *
  * Implements a state machine for sensor acquisition, LoRa transmission, and sleep management.
@@ -130,7 +46,7 @@ void app_main(void) {
     // Buffers allocated on the stack
     float temp_buffer[sample_count];
     float pressure_buffer[sample_count];
-    float humidity_buffer[sample_count]; // Buffer for humidity
+    float humidity_buffer[sample_count];
 
     // Sensor contexts
     CapteurContext temp_ctx = {
@@ -154,7 +70,7 @@ void app_main(void) {
         .start_signal = xSemaphoreCreateBinary()
     };
 
-    // Create sensor tasks
+    // Create sensor tasks (now declared in temperature.h)
     TaskHandle_t temp_task_handle;
     TaskHandle_t pressure_task_handle;
     TaskHandle_t humidity_task_handle;
