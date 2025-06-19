@@ -86,4 +86,13 @@ void lora_enable_crc(void);
  */
 void lora_disable_crc(void);
 
+
+/**
+ * @brief Reads a register from the LoRa module.
+ *
+ * @param reg Register address to read.
+ * @return int Value of the register.
+ */
+int lora_read_reg(int reg);
+
 #endif

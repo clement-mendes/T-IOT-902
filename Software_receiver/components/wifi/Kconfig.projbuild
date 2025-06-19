@@ -2,8 +2,8 @@ menu "WIFI"
 
     config SSID
         string "SSID"
-        default "SSID"
+        default "Iphone clement"
     config PASSWORD
         string "PASSWORD"
-        default "PASSWORD"
+        default "azertyuiii"
 endmenu

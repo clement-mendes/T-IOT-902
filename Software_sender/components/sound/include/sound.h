@@ -10,7 +10,7 @@
  * This function sets up the necessary hardware or software resources
  * required for sound processing.
  */
-void sound_init(void);
+void init_microphone(void);
 
 /**
  * @brief Reads sound data into the provided buffer.
@@ -22,6 +22,6 @@ void sound_init(void);
  * This function captures sound data and stores it in the provided buffer.
  * The length parameter specifies the number of samples to read.
  */
-int sound_read(int16_t *buffer, size_t length);
+int read_microphone_db(int16_t *buffer, size_t length);
 
 #endif

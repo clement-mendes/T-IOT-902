@@ -1,101 +1,88 @@
-#include "sound.h" // Include the header file for sound module declarations
-#include "driver/i2s.h" // Include the I2S driver for ESP32
-#include <math.h> // Include math library (not used in this code but may be needed elsewhere)
+#include "sound.h"
+#include <stdio.h>
+#include <math.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/semphr.h"
+#include "driver/i2s.h"
+#include "esp_log.h"
 
-/**
- * @brief I2S device number to use.
- * 
- * Defines the I2S peripheral to be used. I2S_NUM_0 refers to the first I2S peripheral.
- */
-#define I2S_NUM           I2S_NUM_0 
+#define I2S_NUM I2S_NUM_0
+#define I2S_WS 15  // LRCL
+#define I2S_SD 25  // DOUT
+#define I2S_SCK 13 // BCLK
 
-/**
- * @brief Audio sampling rate.
- * 
- * Defines the frequency at which audio samples are captured.
- */
-#define I2S_SAMPLE_RATE   22050 
+#define TAG "MIC_SENSOR"
 
-/**
- * @brief Bits per audio sample.
- * 
- * Specifies the resolution of each audio sample in bits.
- */
-#define I2S_SAMPLE_BITS   16 
-
-/**
- * @brief Number of DMA buffers.
- * 
- * Defines how many DMA buffers are used for temporary audio data storage.
- */
-#define DMA_BUF_COUNT     8 
-
-/**
- * @brief Length of each DMA buffer.
- * 
- * Specifies the size of each DMA buffer in bytes.
- */
-#define DMA_BUF_LEN       1024 
-
-/**
- * @brief I2S pin configuration.
- * 
- * Defines the GPIO pins used for I2S communication.
- */
-#define I2S_BCK_IO        25   // GPIO pin for BCLK (Bit Clock)
-#define I2S_WS_IO         13   // GPIO pin for LRCL (Word Select)
-#define I2S_DATA_IN_IO    14   // GPIO pin for DOUT (Data Input)
-
-/**
- * @brief Initializes the I2S sound module.
- * 
- * This function configures the I2S peripheral with the specified settings,
- * including sample rate, bit depth, and DMA buffer configuration. It also
- * sets up the GPIO pins for I2S communication.
- */
-void sound_init(void)
+void init_microphone()
 {
-    // Define the I2S configuration structure
     i2s_config_t i2s_config = {
-        .mode = I2S_MODE_MASTER | I2S_MODE_RX, // Set I2S to master mode and enable reception
-        .sample_rate = I2S_SAMPLE_RATE, // Set the sample rate
-        .bits_per_sample = I2S_SAMPLE_BITS, // Set the bits per sample
-        .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT, // Use only the left channel (mono audio)
-        .communication_format = I2S_COMM_FORMAT_I2S, // Set the communication format to I2S
-        .intr_alloc_flags = 0, // No specific interrupt allocation flags
-        .dma_buf_count = DMA_BUF_COUNT, // Set the number of DMA buffers
-        .dma_buf_len = DMA_BUF_LEN, // Set the length of each DMA buffer
-        .use_apll = false, // Do not use the APLL (Audio Phase-Locked Loop)
-    };
+        .mode = I2S_MODE_MASTER | I2S_MODE_RX,
+        .sample_rate = 16000,
+        .bits_per_sample = I2S_BITS_PER_SAMPLE_32BIT,
+        .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT,
+        .communication_format = I2S_COMM_FORMAT_I2S,
+        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
+        .dma_buf_count = 8,
+        .dma_buf_len = 64,
+        .use_apll = false,
+        .tx_desc_auto_clear = false,
+        .fixed_mclk = 0};
 
-    // Define the I2S pin configuration structure
     i2s_pin_config_t pin_config = {
-        .bck_io_num = I2S_BCK_IO, // Set the GPIO pin for BCLK
-        .ws_io_num = I2S_WS_IO, // Set the GPIO pin for LRCL
-        .data_out_num = I2S_PIN_NO_CHANGE, // No GPIO pin for data output
-        .data_in_num = I2S_DATA_IN_IO // Set the GPIO pin for data input
-    };
+        .bck_io_num = I2S_SCK,
+        .ws_io_num = I2S_WS,
+        .data_out_num = I2S_PIN_NO_CHANGE,
+        .data_in_num = I2S_SD};
 
-    // Install and initialize the I2S driver
-    i2s_driver_install(I2S_NUM, &i2s_config, 0, NULL); // Install the I2S driver with the specified configuration
-    i2s_set_pin(I2S_NUM, &pin_config); // Configure the GPIO pins for I2S
+    i2s_driver_install(I2S_NUM, &i2s_config, 0, NULL);
+    i2s_set_pin(I2S_NUM, &pin_config);
+    i2s_zero_dma_buffer(I2S_NUM);
 }
 
-/**
- * @brief Reads audio data from the I2S interface.
- * 
- * @param buffer Pointer to the buffer where audio data will be stored.
- * @param length Number of audio samples to read.
- * @return int Number of samples successfully read, or an error code.
- * 
- * This function reads audio data from the I2S interface into the provided buffer.
- * The function blocks until the specified number of samples is read.
- */
-int sound_read(int16_t *buffer, size_t length)
+float read_microphone_db()
 {
-    size_t bytes_read = 0; // Variable to store the number of bytes read
-    // Perform a blocking read from the I2S interface
-    i2s_read(I2S_NUM, (void *)buffer, length * sizeof(int16_t), &bytes_read, portMAX_DELAY); 
-    // Return the number of samples read (convert bytes to samples)
-    return bytes_read / sizeof(int16_t); 
+    int32_t buffer[64];
+    size_t bytes_read;
+
+    i2s_read(I2S_NUM, (void *)buffer, sizeof(buffer), &bytes_read, portMAX_DELAY);
+
+    float sum_squares = 0.0f;
+    for (int i = 0; i < 64; i++)
+    {
+        float sample = (float)(buffer[i] >> 14);
+        sum_squares += sample * sample;
+    }
+
+    float rms = sqrtf(sum_squares / 64.0f);
+    if (rms < 1.0f)
+        rms = 1.0f;
+
+    float db = 20.0f * log10f(rms);
+    float db_spl = 3.47f * db - 240.0f;
+
+    ESP_LOGI(TAG, "RMS = %.2f | dB = %.2f | dB SPL ~= %.2f", rms, db, db_spl);
+    return db_spl;
+}
+
+void sound_task(void *pvParameters)
+{
+    CapteurContext *ctx = (CapteurContext *)pvParameters;
+    while (1)
+    {
+        xSemaphoreTake(ctx->start_signal, portMAX_DELAY);
+        for (int i = 0; i < ctx->sample_count; i++)
+        {
+            ctx->buffer[i] = read_microphone_db();
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+        ctx->average = 0.0;
+        for (int i = 0; i < ctx->sample_count; i++)
+        {
+            ctx->average += ctx->buffer[i];
+        }
+        ctx->average /= ctx->sample_count;
+        xSemaphoreGive(ctx->done_semaphore);
+        vTaskSuspend(NULL);
+    }
 }
