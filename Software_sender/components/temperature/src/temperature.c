@@ -5,6 +5,7 @@
 #include "temperature.h"
 #include "driver/i2c.h"
 #include "esp_log.h"
+#include "log_utils.h"
 
 // I²C configuration
 #define I2C_MASTER_NUM           I2C_NUM_0 // I²C bus number
@@ -174,10 +175,9 @@ static int8_t dig_H6 = 30; // <-- Change uint8_t to int8_t (as per BME280 datash
 float temperature_get(void)
 {
     uint8_t data[6];
-    // Read 6 bytes starting from the start register (pressure and temperature)
     esp_err_t err = bme280_read_reg(REG_DATA_START, data, 6);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Échec de la lecture des données du capteur");
+        log_error("[Temp] Erreur de lecture du capteur");
         return 0.0;
     }
     
@@ -190,8 +190,9 @@ float temperature_get(void)
     var2 = (((((adc_T >> 4) - ((int32_t)dig_T1)) * ((adc_T >> 4) - ((int32_t)dig_T1))) >> 12) * ((int32_t)dig_T3)) >> 14;
     t_fine = var1 + var2;
     float temperature = (t_fine * 5 + 128) >> 8;
-    // Apply calibration offset (negative to decrease the measured value)
-    return (temperature / 100.0) + TEMPERATURE_OFFSET;
+    float temp_c = (temperature / 100.0) + TEMPERATURE_OFFSET;
+    log_info("[Temp] Mesure brute lue et compensée");
+    return temp_c;
 }
 
 /**
@@ -205,10 +206,9 @@ float temperature_get(void)
 float pressure_get(void)
 {
     uint8_t data[6];
-    // Read 6 bytes
     esp_err_t err = bme280_read_reg(REG_DATA_START, data, 6);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Échec de la lecture des données du capteur");
+        log_error("[Pression] Erreur de lecture du capteur");
         return 0.0;
     }
     
@@ -234,7 +234,9 @@ float pressure_get(void)
     var2 = (((int64_t)dig_P8) * p) >> 19;
     p = ((p + var1 + var2) >> 8) + (((int64_t)dig_P7) << 4);
     
-    return ((float)p) / 25600.0; // Return pressure in hPa
+    float pression = ((float)p) / 25600.0;
+    log_info("[Pression] Mesure brute lue et compensée");
+    return pression;
 }
 
 /**
@@ -248,10 +250,9 @@ float pressure_get(void)
 float humidity_get(void)
 {
     uint8_t data[8];
-    // Read 8 bytes starting from the start register (humidity, pressure, and temperature)
     esp_err_t err = bme280_read_reg(REG_DATA_START, data, 8);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Échec de la lecture des données du capteur");
+        log_error("[Humidité] Erreur de lecture du capteur");
         return 0.0;
     }
 
@@ -267,15 +268,20 @@ float humidity_get(void)
     var1 = (var1 > 419430400 ? 419430400 : var1);
 
     // Apply calibration scale to match real humidity
-    return ((float)(var1 >> 12) / 1024.0) * HUMIDITY_SCALE;
+    float humidite = ((float)(var1 >> 12) / 1024.0) * HUMIDITY_SCALE;
+    log_info("[Humidité] Mesure brute lue et compensée");
+    return humidite;
 }
 
 void temperature_task(void *pvParameters) {
     CapteurContext *ctx = (CapteurContext *)pvParameters;
     while (1) {
+        log_info("[Temp] Attente du signal de démarrage");
         xSemaphoreTake(ctx->start_signal, portMAX_DELAY);
+        log_info("[Temp] Début de l'acquisition");
         for (int i = 0; i < ctx->sample_count; i++) {
             ctx->buffer[i] = temperature_get();
+            log_info("[Temp] Valeur mesurée :");
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
         ctx->average = 0.0;
@@ -283,7 +289,12 @@ void temperature_task(void *pvParameters) {
             ctx->average += ctx->buffer[i];
         }
         ctx->average /= ctx->sample_count;
+        char msg[64];
+        snprintf(msg, sizeof(msg), "[Temp] Moyenne calculée : %.2f", ctx->average);
+        log_info(msg);
+        log_info("[Temp] Acquisition terminée");
         xSemaphoreGive(ctx->done_semaphore);
+        log_info("[Temp] Tâche suspendue");
         vTaskSuspend(NULL);
     }
 }
@@ -291,9 +302,12 @@ void temperature_task(void *pvParameters) {
 void pressure_task(void *pvParameters) {
     CapteurContext *ctx = (CapteurContext *)pvParameters;
     while (1) {
+        log_info("[Pression] Attente du signal de démarrage");
         xSemaphoreTake(ctx->start_signal, portMAX_DELAY);
+        log_info("[Pression] Début de l'acquisition");
         for (int i = 0; i < ctx->sample_count; i++) {
             ctx->buffer[i] = pressure_get();
+            log_info("[Pression] Valeur mesurée :");
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
         ctx->average = 0.0;
@@ -301,7 +315,12 @@ void pressure_task(void *pvParameters) {
             ctx->average += ctx->buffer[i];
         }
         ctx->average /= ctx->sample_count;
+        char msg[64];
+        snprintf(msg, sizeof(msg), "[Pression] Moyenne calculée : %.2f", ctx->average);
+        log_info(msg);
+        log_info("[Pression] Acquisition terminée");
         xSemaphoreGive(ctx->done_semaphore);
+        log_info("[Pression] Tâche suspendue");
         vTaskSuspend(NULL);
     }
 }
@@ -309,9 +328,12 @@ void pressure_task(void *pvParameters) {
 void humidity_task(void *pvParameters) {
     CapteurContext *ctx = (CapteurContext *)pvParameters;
     while (1) {
+        log_info("[Humidité] Attente du signal de démarrage");
         xSemaphoreTake(ctx->start_signal, portMAX_DELAY);
+        log_info("[Humidité] Début de l'acquisition");
         for (int i = 0; i < ctx->sample_count; i++) {
             ctx->buffer[i] = humidity_get();
+            log_info("[Humidité] Valeur mesurée :");
             vTaskDelay(pdMS_TO_TICKS(1000));
         }
         ctx->average = 0.0;
@@ -319,7 +341,12 @@ void humidity_task(void *pvParameters) {
             ctx->average += ctx->buffer[i];
         }
         ctx->average /= ctx->sample_count;
+        char msg[64];
+        snprintf(msg, sizeof(msg), "[Humidité] Moyenne calculée : %.2f", ctx->average);
+        log_info(msg);
+        log_info("[Humidité] Acquisition terminée");
         xSemaphoreGive(ctx->done_semaphore);
+        log_info("[Humidité] Tâche suspendue");
         vTaskSuspend(NULL);
     }
 }
