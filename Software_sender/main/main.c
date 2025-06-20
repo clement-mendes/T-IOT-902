@@ -46,7 +46,6 @@ void app_main(void) {
     float temp_buffer[sample_count];
     float pressure_buffer[sample_count];
     float humidity_buffer[sample_count];
-    float sound_buffer[sample_count];
 
     // Sensor contexts
     CapteurContext temp_ctx = {
@@ -70,23 +69,15 @@ void app_main(void) {
         .start_signal = xSemaphoreCreateBinary()
     };
 
-    CapteurContext sound_ctx = {
-        .buffer = sound_buffer,
-        .sample_count = sample_count,
-        .done_semaphore = xSemaphoreCreateBinary(),
-        .start_signal = xSemaphoreCreateBinary()
-    };
 
     // Create sensor tasks
     TaskHandle_t temp_task_handle;
     TaskHandle_t pressure_task_handle;
     TaskHandle_t humidity_task_handle;
-    TaskHandle_t sound_task_handle;
 
     xTaskCreate(temperature_task, "TempTask", 2048, &temp_ctx, 5, &temp_task_handle);
     xTaskCreate(pressure_task, "PressureTask", 2048, &pressure_ctx, 5, &pressure_task_handle);
     xTaskCreate(humidity_task, "HumidityTask", 2048, &humidity_ctx, 5, &humidity_task_handle);
-    xTaskCreate(sound_task, "SoundTask", 2048, &sound_ctx, 5, &sound_task_handle);
 
     while (1) {
         switch (state) {
@@ -100,7 +91,14 @@ void app_main(void) {
 
             lora_set_frequency(868e6);
             temperature_init();
-            init_microphone();
+            sound_init();
+            while (1)
+            {
+                int sound_level = sound_read();
+                ESP_LOGI("Sound", "Sound level: %d", sound_level);
+                vTaskDelay(pdMS_TO_TICKS(1000));
+            }
+            
             state = ACQUISITION;
             break;
 
@@ -111,19 +109,16 @@ void app_main(void) {
             vTaskResume(temp_task_handle);
             vTaskResume(pressure_task_handle);
             vTaskResume(humidity_task_handle);
-            vTaskResume(sound_task_handle);
 
             // Trigger synchronized measurements
             xSemaphoreGive(temp_ctx.start_signal);
             xSemaphoreGive(pressure_ctx.start_signal);
             xSemaphoreGive(humidity_ctx.start_signal);
-            xSemaphoreGive(sound_ctx.start_signal);
 
             // Wait for each task to finish
             xSemaphoreTake(temp_ctx.done_semaphore, portMAX_DELAY);
             xSemaphoreTake(pressure_ctx.done_semaphore, portMAX_DELAY);
             xSemaphoreTake(humidity_ctx.done_semaphore, portMAX_DELAY);
-            xSemaphoreTake(sound_ctx.done_semaphore, portMAX_DELAY);
 
             printf("Average temperature: %.2f°C | Average pressure: %.2f hPa | Average humidity: %.2f%% | Average sound: %.2f dB\n",
                    temp_ctx.average, pressure_ctx.average, humidity_ctx.average, sound_ctx.average);
