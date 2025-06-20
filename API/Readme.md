@@ -1,16 +1,16 @@
 # INDEX.JS
 
-Ce fichier contient les éléments principaux de l'API, il va notamment contenir les routes nécessaires pour envoyer des données en base de données. Pour qu'elles soient utilisées par Metabase.
+This file contains the main components of the API. It includes the necessary routes to send data to the database, so it can be used by Metabase.
 
 # DB.JS
 
-Ce fichier permet de connecté l'API à la base de donnée grâce au module PG.
+This file connects the API to the database using the PG module.
 
-Le module pg est le module officiel PostgreSQL pour Node.js. Il te permet de connecter l'application Node.js à une base de données PostgreSQL pour :
+The `pg` module is the official PostgreSQL module for Node.js. It allows the Node.js application to connect to a PostgreSQL database in order to:
 
-exécuter des requêtes SQL (SELECT, INSERT, UPDATE, etc.)
-- gérer les connexions
-- recevoir des résultats de requêtes
-- manipuler des transactions
+- Execute SQL queries (SELECT, INSERT, UPDATE, etc.)
+- Manage connections
+- Receive query results
+- Handle transactions
 
-Le "Pool" permet de réutiliser des connexions au lieu d’en ouvrir une à chaque requête.
+The "Pool" enables connection reuse instead of opening a new one for each request.
