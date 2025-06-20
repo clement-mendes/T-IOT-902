@@ -77,81 +77,6 @@ static adc_oneshot_unit_handle_t adc1_handle;
 static float moving_average_buffer[MOVING_AVG_SIZE];
 static int buffer_index = 0;
 
-bool sound_check_connections(void)
-{
-    ESP_LOGI(TAG, "Vérification des connexions du capteur de son...");
-
-    // Configuration du pin VCC en sortie (si utilisé)
-    if (SOUND_VCC_PIN >= 0) {
-        gpio_config_t io_conf = {
-            .pin_bit_mask = (1ULL << SOUND_VCC_PIN),
-            .mode = GPIO_MODE_OUTPUT,
-            .pull_up_en = GPIO_PULLUP_DISABLE,
-            .pull_down_en = GPIO_PULLDOWN_DISABLE,
-            .intr_type = GPIO_INTR_DISABLE,
-        };
-        gpio_config(&io_conf);
-        gpio_set_level(SOUND_VCC_PIN, 1);  // Alimenter le capteur
-        ESP_LOGI(TAG, "VCC configuré sur GPIO%d", SOUND_VCC_PIN);
-    }
-
-    // Test de lecture ADC
-    int adc_raw;
-    int min_val = 4095;
-    int max_val = 0;
-    int zero_count = 0;
-    int max_count = 0;
-    int mid_range_count = 0;
-    bool signal_variation = false;
-
-    // Prendre plusieurs lectures pour voir si le signal varie
-    ESP_LOGI(TAG, "Test de lecture ADC sur 3 secondes...");
-    for (int i = 0; i < 30; i++) {
-        ESP_ERROR_CHECK(adc_oneshot_read(adc1_handle, ADC_CHANNEL, &adc_raw));
-        
-        if (adc_raw < min_val) min_val = adc_raw;
-        if (adc_raw > max_val) max_val = adc_raw;
-
-        // Compter les types de lectures
-        if (adc_raw == 0) zero_count++;
-        else if (adc_raw == 4095) max_count++;
-        else mid_range_count++;
-
-        ESP_LOGI(TAG, "Lecture ADC #%d: %d", i+1, adc_raw);
-        vTaskDelay(pdMS_TO_TICKS(100));
-    }
-
-    // Analyser les résultats
-    int variation = max_val - min_val;
-    signal_variation = (variation > 100);
-
-    ESP_LOGI(TAG, "Résultats du diagnostic détaillé:");
-    ESP_LOGI(TAG, "- Pin OUT (GPIO%d): %s", SOUND_OUT_PIN,
-             (min_val < 4095 && max_val > 0) ? "Connecté" : "Problème détecté");
-    ESP_LOGI(TAG, "- Variation du signal: %d (min: %d, max: %d)",
-             variation, min_val, max_val);
-    ESP_LOGI(TAG, "- Statistiques des lectures:");
-    ESP_LOGI(TAG, "  * Lectures à 0: %d/30", zero_count);
-    ESP_LOGI(TAG, "  * Lectures à 4095: %d/30", max_count);
-    ESP_LOGI(TAG, "  * Lectures intermédiaires: %d/30", mid_range_count);
-
-    // Analyse des problèmes potentiels
-    if (zero_count > 5 && max_count > 5) {
-        ESP_LOGE(TAG, "ERREUR: Signal instable - Vérifiez les connexions physiques");
-    }
-    if (max_count > 20) {
-        ESP_LOGE(TAG, "ERREUR: Signal majoritairement saturé - Vérifiez l'alimentation ou réduisez le gain");
-    }
-    if (zero_count > 20) {
-        ESP_LOGE(TAG, "ERREUR: Signal majoritairement nul - Vérifiez l'alimentation");
-    }
-    if (mid_range_count == 0) {
-        ESP_LOGE(TAG, "ERREUR: Aucune lecture intermédiaire - Problème de connexion ou de configuration");
-    }
-
-    return signal_variation && (mid_range_count > 0);
-}
-
 /**
  * @brief Initializes the I2S sound module.
  * 
@@ -184,10 +109,6 @@ void sound_init(void)
     };
     ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL, &config));
 
-    // Vérifier les connexions au démarrage
-    if (!sound_check_connections()) {
-        ESP_LOGE(TAG, "Problème détecté avec le capteur de son!");
-    }
 }
 
 static float apply_moving_average(float new_value) {

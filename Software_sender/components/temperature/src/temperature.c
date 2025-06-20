@@ -48,6 +48,7 @@ static esp_err_t bme280_write_reg(uint8_t reg, uint8_t value)
 }
 
 /**
+ * 
  * @brief Reads data from a specified register of the BME280 sensor.
  *
  * This function communicates with the BME280 sensor to read a specified number
@@ -149,6 +150,7 @@ static int16_t dig_P8 = -14600;
 static int16_t dig_P9 = 6000;
 
 /**
+ * constructor code
  * @brief Retrieves the current temperature reading.
  * 
  * This function is used to obtain the current temperature value
@@ -181,6 +183,7 @@ float temperature_get(void)
 }
 
 /**
+ * constructor code
  * @brief Retrieves the current pressure value.
  * 
  * This function is responsible for obtaining the current pressure
