@@ -16,92 +16,7 @@
 #include "temperature.h"
 #include "esp_sleep.h"
 #include "esp_system.h"
-// #include "sound.h"
-// #include "air_quality.h"
-
-/**
- * @struct CapteurContext
- * @brief Context structure for sensor acquisition tasks.
- */
-typedef struct {
-    float *buffer;                  ///< Buffer to store sensor samples
-    int sample_count;               ///< Number of samples to acquire
-    float average;                  ///< Computed average value
-    SemaphoreHandle_t done_semaphore;   ///< Semaphore to signal task completion
-    SemaphoreHandle_t start_signal;     ///< Semaphore to trigger task start
-} CapteurContext;
-
-/**
- * @brief Task for temperature acquisition and averaging.
- * @param pvParameters Pointer to CapteurContext.
- */
-void temperature_task(void *pvParameters) {
-    CapteurContext *ctx = (CapteurContext *)pvParameters;
-    while (1) {
-        xSemaphoreTake(ctx->start_signal, portMAX_DELAY);
-        for (int i = 0; i < ctx->sample_count; i++) {
-            ctx->buffer[i] = temperature_get();
-            vTaskDelay(pdMS_TO_TICKS(1000));
-        }
-        ctx->average = 0.0;
-        for (int i = 0; i < ctx->sample_count; i++) {
-            ctx->average += ctx->buffer[i];
-        }
-        ctx->average /= ctx->sample_count;
-        xSemaphoreGive(ctx->done_semaphore);
-        vTaskSuspend(NULL);
-    }
-}
-
-/**
- * @brief Task for pressure acquisition and averaging.
- * @param pvParameters Pointer to CapteurContext.
- */
-void pressure_task(void *pvParameters) {
-    CapteurContext *ctx = (CapteurContext *)pvParameters;
-    while (1) {
-        xSemaphoreTake(ctx->start_signal, portMAX_DELAY);
-        for (int i = 0; i < ctx->sample_count; i++) {
-            ctx->buffer[i] = pressure_get();
-            vTaskDelay(pdMS_TO_TICKS(1000));
-        }
-        ctx->average = 0.0;
-        for (int i = 0; i < ctx->sample_count; i++) {
-            ctx->average += ctx->buffer[i];
-        }
-        ctx->average /= ctx->sample_count;
-        xSemaphoreGive(ctx->done_semaphore);
-        vTaskSuspend(NULL);
-    }
-}
-
-/**
- * @brief Task for humidity acquisition and averaging.
- * @param pvParameters Pointer to CapteurContext.
- */
-void humidity_task(void *pvParameters) {
-    CapteurContext *ctx = (CapteurContext *)pvParameters;
-    while (1) {
-        xSemaphoreTake(ctx->start_signal, portMAX_DELAY);
-        for (int i = 0; i < ctx->sample_count; i++) {
-            ctx->buffer[i] = humidity_get();
-            vTaskDelay(pdMS_TO_TICKS(1000));
-        }
-        ctx->average = 0.0;
-        for (int i = 0; i < ctx->sample_count; i++) {
-            ctx->average += ctx->buffer[i];
-        }
-        ctx->average /= ctx->sample_count;
-        xSemaphoreGive(ctx->done_semaphore);
-        vTaskSuspend(NULL);
-    }
-}
-
-/*
-// To add later:
-void sound_task(void *pvParameters) { ... }
-void air_quality_task(void *pvParameters) { ... }
-*/
+#include "sound.h"
 
 /**
  * @brief Main application entry point.
@@ -130,7 +45,8 @@ void app_main(void) {
     // Buffers allocated on the stack
     float temp_buffer[sample_count];
     float pressure_buffer[sample_count];
-    float humidity_buffer[sample_count]; // Buffer for humidity
+    float humidity_buffer[sample_count];
+    float sound_buffer[sample_count];
 
     // Sensor contexts
     CapteurContext temp_ctx = {
@@ -154,14 +70,23 @@ void app_main(void) {
         .start_signal = xSemaphoreCreateBinary()
     };
 
-    // Create sensor tasks
+    CapteurContext sound_ctx = {
+        .buffer = sound_buffer,
+        .sample_count = sample_count,
+        .done_semaphore = xSemaphoreCreateBinary(),
+        .start_signal = xSemaphoreCreateBinary(),
+    };
+
+    // Create sensor tasks (now declared in temperature.h)
     TaskHandle_t temp_task_handle;
     TaskHandle_t pressure_task_handle;
     TaskHandle_t humidity_task_handle;
+    TaskHandle_t sound_task_handle;
 
     xTaskCreate(temperature_task, "TempTask", 2048, &temp_ctx, 5, &temp_task_handle);
     xTaskCreate(pressure_task, "PressureTask", 2048, &pressure_ctx, 5, &pressure_task_handle);
     xTaskCreate(humidity_task, "HumidityTask", 2048, &humidity_ctx, 5, &humidity_task_handle);
+    xTaskCreate(sound_task, "SoundTask", 2048, &sound_ctx, 5, &sound_task_handle);
 
     while (1) {
         switch (state) {
@@ -175,62 +100,74 @@ void app_main(void) {
 
             lora_set_frequency(868e6);
             temperature_init();
+            if (mic_init() != ESP_OK) {
+                ESP_LOGE("mic", "Erreur initialisation microphone");
+            }    
             state = ACQUISITION;
             break;
 
         case ACQUISITION:
             ESP_LOGI("STATE", "ACQUISITION");
-
+              
             // Resume sensor tasks
             vTaskResume(temp_task_handle);
             vTaskResume(pressure_task_handle);
             vTaskResume(humidity_task_handle);
+            vTaskResume(sound_task_handle);
+
 
             // Trigger synchronized measurements
             xSemaphoreGive(temp_ctx.start_signal);
             xSemaphoreGive(pressure_ctx.start_signal);
             xSemaphoreGive(humidity_ctx.start_signal);
+            xSemaphoreGive(sound_ctx.start_signal);
+
 
             // Wait for each task to finish
             xSemaphoreTake(temp_ctx.done_semaphore, portMAX_DELAY);
             xSemaphoreTake(pressure_ctx.done_semaphore, portMAX_DELAY);
             xSemaphoreTake(humidity_ctx.done_semaphore, portMAX_DELAY);
+            xSemaphoreTake(sound_ctx.done_semaphore, portMAX_DELAY);
 
-            printf("Average temperature: %.2f°C | Average pressure: %.2f hPa | Average humidity: %.2f%%\n",
-                   temp_ctx.average, pressure_ctx.average, humidity_ctx.average);
+            printf("Average temperature: %.2f°C | Average pressure: %.2f hPa | Average humidity: %.2f%% | Average SPL: %.2f dB SPL\n",
+                   temp_ctx.average, pressure_ctx.average, humidity_ctx.average, sound_ctx.average);
 
             state = TRANSMISSION;
             break;
 
         case TRANSMISSION:
             ESP_LOGI("STATE", "TRANSMISSION");
-            {
-                char message[128];
-                snprintf(message, sizeof(message),
-                         "{\"temp\":%.2f,\"press\":%.2f,\"hum\":%.2f}",
-                         temp_ctx.average, pressure_ctx.average, humidity_ctx.average);
-                lora_send_packet((uint8_t *)message, strlen(message));
-                ESP_LOGI("LoRa", "Message sent: %s", message);
-            }
+
+            
+            char message[160];
+            snprintf(message, sizeof(message),
+                        "{\"temp\":%.2f,\"press\":%.2f,\"hum\":%.2f,\"spl\":%.2f}",
+                        temp_ctx.average, pressure_ctx.average, humidity_ctx.average, sound_ctx.average);
+            lora_send_packet((uint8_t *)message, strlen(message));
+            ESP_LOGI("LoRa", "Message sent: %s", message);
+            
+
             state = SLEEPMODE;
             break;
 
         case SLEEPMODE:
             ESP_LOGI("STATE", "SLEEPMODE");
-            {
+
+            
                 const int sleep_time_sec = 10;
                 state = INIT;
                 esp_sleep_enable_timer_wakeup(sleep_time_sec * 1000000ULL);
                 esp_deep_sleep_start();
-            }
+            
             break;
 
         case WAKEUP:
             ESP_LOGI("STATE", "WAKEUP");
-            {
+            
+
                 esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
                 ESP_LOGI("WAKEUP", "Wakeup cause: %d", cause);
-            }
+            
             break;
 
         case ERROR:
@@ -238,6 +175,7 @@ void app_main(void) {
             vTaskDelay(pdMS_TO_TICKS(5000));
             state = INIT;
             break;
+        
         }
     }
 }
