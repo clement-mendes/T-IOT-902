@@ -57,8 +57,8 @@ async function sendToSensorsCommunity(data, sensorId) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-Pin': xPin.toString(),
-      'X-Sensor': xSensor
+      'X-ping': xPin,
+      'X-Sensor': sensorId
     },
     body: JSON.stringify(body)
   });
@@ -75,74 +75,46 @@ app.post('/espdata', async (req, res) => {
   // Log received data for debugging
   console.log('Data received from ESP:', dataArray);
 
-  // Check that the request body is a non-empty JSON array
-  if (!Array.isArray(dataArray) || dataArray.length === 0) {
-    return res.status(400).send('Body must be a non-empty JSON array');
+  // Always work with an array
+  let dataList = dataArray;
+  if (!Array.isArray(dataArray)) {
+    dataList = [dataArray];
+  }
+  if (!dataList || dataList.length === 0) {
+    return res.status(400).send('Body must be a non-empty JSON array or object');
   }
 
   // Fixed sensor IDs for each type
-  const ENV_SENSOR_ID = "022222"; // temp, hum, pressure
-  const SOUND_SENSOR_ID = "011111"; // sound
-  const DUST_SENSOR_ID = "033333"; // dust/airquality
+  const ENV_SENSOR_ID = "022222"; // temp, hum, pressure, sound
 
   try {
-    for (const data of dataArray) {
+    for (const data of dataList) {
       // Insert and send for temp/hum/pressure
       if (
         data.temp !== undefined ||
         data.hum !== undefined ||
-        data.press !== undefined
+        data.press !== undefined ||
+        data.sound !== undefined
       ) {
         const tempVal = data.temp !== undefined ? data.temp : null;
         const presVal = data.press !== undefined ? data.press : null;
         const humVal = data.hum !== undefined ? data.hum : null;
+        const soundVal = data.sound;
 
         // Insert environmental data into the database
         await pool.query(
-          `INSERT INTO sensors (sensor_id, temperature, pressure, humidity) 
-           VALUES ($1, $2, $3, $4)`,
-          [ENV_SENSOR_ID, tempVal, presVal, humVal]
-        );
-
-        // Send environmental data to Sensor Community
-        await sendToSensorsCommunity(
-          { temperature: tempVal, pressure: presVal, humidity: humVal },
-          ENV_SENSOR_ID
+          `INSERT INTO sensors (sensor_id, temperature, pressure, humidity, sound) 
+           VALUES ($1, $2, $3, $4, $5)`,
+          [ENV_SENSOR_ID, tempVal, presVal, humVal, soundVal]
         );
       }
 
-      // Insert and send for sound
-      if (data.sound !== undefined) {
-        const soundVal = data.sound;
-        // Insert sound data into the database
-        await pool.query(
-          `INSERT INTO sensors (sensor_id, sound) VALUES ($1, $2)`,
-          [SOUND_SENSOR_ID, soundVal]
-        );
-
-        // Send sound data to Sensor Community
-        await sendToSensorsCommunity(
-          { sound: soundVal },
-          SOUND_SENSOR_ID
-        );
+        // // Send environmental data to Sensor Community
+        // await sendToSensorsCommunity(
+        //   { temperature: tempVal, pressure: presVal, humidity: humVal, sound: soundVal },
+        //   ENV_SENSOR_ID
+        // );
       }
-
-      // Insert and send for dust/airquality
-      if (data.airquality !== undefined) {
-        const airqVal = data.airquality;
-        // Insert air quality data into the database
-        await pool.query(
-          `INSERT INTO sensors (sensor_id, airquality) VALUES ($1, $2)`,
-          [DUST_SENSOR_ID, airqVal]
-        );
-
-        // Send air quality data to Sensor Community
-        await sendToSensorsCommunity(
-          { airquality: airqVal },
-          DUST_SENSOR_ID
-        );
-      }
-    }
     res.status(201).send('ESP data saved');
   } catch (err) {
     console.error(err);
