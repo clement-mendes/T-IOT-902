@@ -141,7 +141,7 @@ void app_main(void) {
             
             char message[160];
             snprintf(message, sizeof(message),
-                        "{\"temp\":%.2f,\"press\":%.2f,\"hum\":%.2f,\"spl\":%.2f}",
+                        "{\"temp\":%.2f,\"press\":%.2f,\"hum\":%.2f,\"sound\":%.2f}",
                         temp_ctx.average, pressure_ctx.average, humidity_ctx.average, sound_ctx.average);
             lora_send_packet((uint8_t *)message, strlen(message));
             ESP_LOGI("LoRa", "Message sent: %s", message);
