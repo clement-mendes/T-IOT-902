@@ -1,101 +1,109 @@
-#include "sound.h" // Include the header file for sound module declarations
-#include "driver/i2s.h" // Include the I2S driver for ESP32
-#include <math.h> // Include math library (not used in this code but may be needed elsewhere)
+#include "sound.h"
+#include "esp_log.h"
+#include "freertos/FreeRTOS.h"
+#include "driver/i2s_std.h"   // Pour l'API I2S nouvelle génération
+#include <math.h>
 
-/**
- * @brief I2S device number to use.
- * 
- * Defines the I2S peripheral to be used. I2S_NUM_0 refers to the first I2S peripheral.
- */
-#define I2S_NUM           I2S_NUM_0 
 
-/**
- * @brief Audio sampling rate.
- * 
- * Defines the frequency at which audio samples are captured.
- */
-#define I2S_SAMPLE_RATE   22050 
+#define I2S_BCK_IO        25
+#define I2S_WS_IO         13
+#define I2S_DATA_IN_IO    14
+#define SAMPLE_RATE       16000
+#define MIC_DBFS_BUFFER_SIZE 1024
 
-/**
- * @brief Bits per audio sample.
- * 
- * Specifies the resolution of each audio sample in bits.
- */
-#define I2S_SAMPLE_BITS   16 
+static const char* TAG = "SPH0645";
+static i2s_chan_handle_t rx_handle = NULL;
+int32_t buffer[MIC_DBFS_BUFFER_SIZE];
 
-/**
- * @brief Number of DMA buffers.
- * 
- * Defines how many DMA buffers are used for temporary audio data storage.
- */
-#define DMA_BUF_COUNT     8 
 
-/**
- * @brief Length of each DMA buffer.
- * 
- * Specifies the size of each DMA buffer in bytes.
- */
-#define DMA_BUF_LEN       1024 
-
-/**
- * @brief I2S pin configuration.
- * 
- * Defines the GPIO pins used for I2S communication.
- */
-#define I2S_BCK_IO        25   // GPIO pin for BCLK (Bit Clock)
-#define I2S_WS_IO         13   // GPIO pin for LRCL (Word Select)
-#define I2S_DATA_IN_IO    14   // GPIO pin for DOUT (Data Input)
-
-/**
- * @brief Initializes the I2S sound module.
- * 
- * This function configures the I2S peripheral with the specified settings,
- * including sample rate, bit depth, and DMA buffer configuration. It also
- * sets up the GPIO pins for I2S communication.
- */
-void sound_init(void)
+esp_err_t mic_init(void)
 {
-    // Define the I2S configuration structure
-    i2s_config_t i2s_config = {
-        .mode = I2S_MODE_MASTER | I2S_MODE_RX, // Set I2S to master mode and enable reception
-        .sample_rate = I2S_SAMPLE_RATE, // Set the sample rate
-        .bits_per_sample = I2S_SAMPLE_BITS, // Set the bits per sample
-        .channel_format = I2S_CHANNEL_FMT_ONLY_LEFT, // Use only the left channel (mono audio)
-        .communication_format = I2S_COMM_FORMAT_I2S, // Set the communication format to I2S
-        .intr_alloc_flags = 0, // No specific interrupt allocation flags
-        .dma_buf_count = DMA_BUF_COUNT, // Set the number of DMA buffers
-        .dma_buf_len = DMA_BUF_LEN, // Set the length of each DMA buffer
-        .use_apll = false, // Do not use the APLL (Audio Phase-Locked Loop)
+    // Configuration I2S
+    i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
+    esp_err_t ret = i2s_new_channel(&chan_cfg, NULL, &rx_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Erreur création canal I2S");
+        return ret;
+    }
+    
+    i2s_std_config_t std_cfg = {
+        .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(SAMPLE_RATE),
+        .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_32BIT, I2S_SLOT_MODE_MONO),
+        .gpio_cfg = {
+            .mclk = I2S_GPIO_UNUSED,
+            .bclk = I2S_BCK_IO,
+            .ws = I2S_WS_IO,
+            .dout = I2S_GPIO_UNUSED,
+            .din = I2S_DATA_IN_IO,
+        },
     };
-
-    // Define the I2S pin configuration structure
-    i2s_pin_config_t pin_config = {
-        .bck_io_num = I2S_BCK_IO, // Set the GPIO pin for BCLK
-        .ws_io_num = I2S_WS_IO, // Set the GPIO pin for LRCL
-        .data_out_num = I2S_PIN_NO_CHANGE, // No GPIO pin for data output
-        .data_in_num = I2S_DATA_IN_IO // Set the GPIO pin for data input
-    };
-
-    // Install and initialize the I2S driver
-    i2s_driver_install(I2S_NUM, &i2s_config, 0, NULL); // Install the I2S driver with the specified configuration
-    i2s_set_pin(I2S_NUM, &pin_config); // Configure the GPIO pins for I2S
+    
+    ret = i2s_channel_init_std_mode(rx_handle, &std_cfg);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Erreur init I2S");
+        return ret;
+    }
+    
+    ret = i2s_channel_enable(rx_handle);
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "Erreur activation I2S");
+        return ret;
+    }
+    
+    ESP_LOGI(TAG, "Microphone initialisé");
+    return ESP_OK;
 }
 
-/**
- * @brief Reads audio data from the I2S interface.
- * 
- * @param buffer Pointer to the buffer where audio data will be stored.
- * @param length Number of audio samples to read.
- * @return int Number of samples successfully read, or an error code.
- * 
- * This function reads audio data from the I2S interface into the provided buffer.
- * The function blocks until the specified number of samples is read.
- */
-int sound_read(int16_t *buffer, size_t length)
+esp_err_t mic_read(int32_t *buffer, size_t buffer_size, size_t *bytes_read)
 {
-    size_t bytes_read = 0; // Variable to store the number of bytes read
-    // Perform a blocking read from the I2S interface
-    i2s_read(I2S_NUM, (void *)buffer, length * sizeof(int16_t), &bytes_read, portMAX_DELAY); 
-    // Return the number of samples read (convert bytes to samples)
-    return bytes_read / sizeof(int16_t); 
+    if (rx_handle == NULL) {
+        ESP_LOGE(TAG, "Microphone non initialisé");
+        return ESP_ERR_INVALID_STATE;
+    }
+    
+    return i2s_channel_read(rx_handle, buffer, buffer_size, bytes_read, portMAX_DELAY);
+}
+
+void mic_stop(void)
+{
+    if (rx_handle != NULL) {
+        i2s_channel_disable(rx_handle);
+        i2s_del_channel(rx_handle);
+        rx_handle = NULL;
+        ESP_LOGI(TAG, "Microphone arrêté");
+    }
+}
+
+
+
+void sound_print_dbfs(void) {
+    size_t bytes_read = 0;
+    if (mic_read(buffer, sizeof(buffer), &bytes_read) != ESP_OK) {
+        printf("Erreur lecture micro\n");
+        return;
+    }
+    size_t samples = bytes_read / sizeof(int32_t);
+    if (samples == 0) {
+        printf("Aucun échantillon lu\n");
+        return;
+    }
+    double sum = 0;
+    double max = 0;
+    for (size_t i = 0; i < samples; i++) {
+        int32_t sample = buffer[i] >> 14; // 18 bits utiles
+        sum += sample * sample;
+        if (fabs(sample) > max) max = fabs(sample);
+    }
+    double rms = sqrt(sum / samples);
+    double db = 20.0 * log10(rms / 131071.0); // 131071 = 2^17-1
+    double db_peak = 20.0 * log10(max / 131071.0);
+    // Calcul SPL basé sur le pic
+    double db_spl = (db_peak + 20) * 9.25 + 15.6;
+    int bars = (int)((db_peak + 60) / 3); // 0 à 20 barres
+    if (bars < 0) bars = 0;
+    if (bars > 20) bars = 20;
+    printf("Niveau sonore (pic) : %.2f dB SPL | ", db_spl);
+    for (int i = 0; i < bars; i++) printf("|");
+    printf("\n");
+    printf("(dBFS RMS : %.2f | dBFS Pic : %.2f)\n", db, db_peak);
 }

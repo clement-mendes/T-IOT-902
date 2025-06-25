@@ -16,7 +16,7 @@
 #include "temperature.h"
 #include "esp_sleep.h"
 #include "esp_system.h"
-// #include "sound.h"
+#include "sound.h"
 // #include "air_quality.h"
 
 /**
@@ -91,12 +91,23 @@ void app_main(void) {
 
             lora_set_frequency(868e6);
             temperature_init();
+            if (mic_init() != ESP_OK) {
+                ESP_LOGE("mic", "Erreur initialisation microphone");
+            }    
             state = ACQUISITION;
             break;
 
         case ACQUISITION:
             ESP_LOGI("STATE", "ACQUISITION");
-
+            int32_t buffer[256];
+            size_t bytes_read;
+                
+            while (1) {
+                // Lire les données
+                sound_print_dbfs();
+                
+                vTaskDelay(pdMS_TO_TICKS(100));
+            }
             // Resume sensor tasks
             vTaskResume(temp_task_handle);
             vTaskResume(pressure_task_handle);
@@ -155,5 +166,6 @@ void app_main(void) {
             state = INIT;
             break;
         }
+
     }
 }
