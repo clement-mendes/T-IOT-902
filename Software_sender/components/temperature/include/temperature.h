@@ -6,19 +6,8 @@
 #include "freertos/task.h"
 #include "freertos/semphr.h"
 #include <stdint.h> 
+#include "capteur_context.h"
 
-
-/**
- * @struct CapteurContext
- * @brief Context structure for sensor acquisition tasks.
- */
-typedef struct {
-    float *buffer;                  ///< Buffer to store sensor samples
-    int sample_count;               ///< Number of samples to acquire
-    float average;                  ///< Computed average value
-    SemaphoreHandle_t done_semaphore;   ///< Semaphore to signal task completion
-    SemaphoreHandle_t start_signal;     ///< Semaphore to trigger task start
-} CapteurContext;
 
 /**
  * @brief Initializes the I²C interface and configures the BME280 sensor.
