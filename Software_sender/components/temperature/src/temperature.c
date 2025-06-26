@@ -1,7 +1,10 @@
-#include "temperature.h" // Include the header file for temperature module declarations
-#include "driver/i2c.h" // Include the I²C driver for ESP32
-#include "esp_log.h" // Include ESP-IDF logging library
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/semphr.h"
 #include <stdint.h> // Include standard integer types
+#include "temperature.h"
+#include "driver/i2c.h"
+#include "esp_log.h"
 
 // I²C configuration
 #define I2C_MASTER_NUM           I2C_NUM_0 // I²C bus number
@@ -149,6 +152,17 @@ static int16_t dig_P7 = 15500;
 static int16_t dig_P8 = -14600;
 static int16_t dig_P9 = 6000;
 
+// Compensation parameters for humidity
+static uint8_t dig_H1 = 75;
+static int16_t dig_H2 = 362;
+static uint8_t dig_H3 = 0;
+static int16_t dig_H4 = 334;
+static int16_t dig_H5 = 50;
+static int8_t dig_H6 = 30; // <-- Change uint8_t to int8_t (as per BME280 datasheet)
+
+#define TEMPERATURE_OFFSET -5.0   // Calibration offset for temperature (adjust to match your real value)
+#define HUMIDITY_SCALE 0.77      // Calibration scale for humidity (already correct for your case)
+
 /**
  * constructor code
  * @brief Retrieves the current temperature reading.
@@ -178,8 +192,8 @@ float temperature_get(void)
     var2 = (((((adc_T >> 4) - ((int32_t)dig_T1)) * ((adc_T >> 4) - ((int32_t)dig_T1))) >> 12) * ((int32_t)dig_T3)) >> 14;
     t_fine = var1 + var2;
     float temperature = (t_fine * 5 + 128) >> 8;
-    
-    return temperature / 100.0;
+    // Apply calibration offset (negative to decrease the measured value)
+    return (temperature / 100.0) + TEMPERATURE_OFFSET;
 }
 
 /**
@@ -224,4 +238,91 @@ float pressure_get(void)
     p = ((p + var1 + var2) >> 8) + (((int64_t)dig_P7) << 4);
     
     return ((float)p) / 25600.0; // Return pressure in hPa
+}
+
+/**
+ * @brief Retrieves the current humidity value.
+ * 
+ * This function reads the humidity data from the BMP280 sensor and applies
+ * the necessary compensation formula to return the humidity in percentage.
+ * 
+ * @return float The current humidity in percentage (%).
+ */
+float humidity_get(void)
+{
+    uint8_t data[8];
+    // Read 8 bytes starting from the start register (humidity, pressure, and temperature)
+    esp_err_t err = bme280_read_reg(REG_DATA_START, data, 8);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Échec de la lecture des données du capteur");
+        return 0.0;
+    }
+
+    // Bytes [6,7] contain the raw humidity
+    int32_t adc_H = ((int32_t)data[6] << 8) | ((int32_t)data[7]);
+
+    // Humidity compensation formula (algorithm provided in the datasheet)
+    int32_t var1 = t_fine - 76800;
+    var1 = (((adc_H << 14) - (((int32_t)dig_H4) << 20) - (((int32_t)dig_H5) * var1)) + 16384) >> 15;
+    var1 = var1 * (((((((var1 * ((int32_t)dig_H6)) >> 10) * (((var1 * ((int32_t)dig_H3)) >> 11) + 32768)) >> 10) + 2097152) * ((int32_t)dig_H2) + 8192) >> 14);
+    var1 = var1 - (((((var1 >> 15) * (var1 >> 15)) >> 7) * ((int32_t)dig_H1)) >> 4);
+    var1 = (var1 < 0 ? 0 : var1);
+    var1 = (var1 > 419430400 ? 419430400 : var1);
+
+    // Apply calibration scale to match real humidity
+    return ((float)(var1 >> 12) / 1024.0) * HUMIDITY_SCALE;
+}
+
+void temperature_task(void *pvParameters) {
+    CapteurContext *ctx = (CapteurContext *)pvParameters;
+    while (1) {
+        xSemaphoreTake(ctx->start_signal, portMAX_DELAY);
+        for (int i = 0; i < ctx->sample_count; i++) {
+            ctx->buffer[i] = temperature_get();
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+        ctx->average = 0.0;
+        for (int i = 0; i < ctx->sample_count; i++) {
+            ctx->average += ctx->buffer[i];
+        }
+        ctx->average /= ctx->sample_count;
+        xSemaphoreGive(ctx->done_semaphore);
+        vTaskSuspend(NULL);
+    }
+}
+
+void pressure_task(void *pvParameters) {
+    CapteurContext *ctx = (CapteurContext *)pvParameters;
+    while (1) {
+        xSemaphoreTake(ctx->start_signal, portMAX_DELAY);
+        for (int i = 0; i < ctx->sample_count; i++) {
+            ctx->buffer[i] = pressure_get();
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+        ctx->average = 0.0;
+        for (int i = 0; i < ctx->sample_count; i++) {
+            ctx->average += ctx->buffer[i];
+        }
+        ctx->average /= ctx->sample_count;
+        xSemaphoreGive(ctx->done_semaphore);
+        vTaskSuspend(NULL);
+    }
+}
+
+void humidity_task(void *pvParameters) {
+    CapteurContext *ctx = (CapteurContext *)pvParameters;
+    while (1) {
+        xSemaphoreTake(ctx->start_signal, portMAX_DELAY);
+        for (int i = 0; i < ctx->sample_count; i++) {
+            ctx->buffer[i] = humidity_get();
+            vTaskDelay(pdMS_TO_TICKS(1000));
+        }
+        ctx->average = 0.0;
+        for (int i = 0; i < ctx->sample_count; i++) {
+            ctx->average += ctx->buffer[i];
+        }
+        ctx->average /= ctx->sample_count;
+        xSemaphoreGive(ctx->done_semaphore);
+        vTaskSuspend(NULL);
+    }
 }

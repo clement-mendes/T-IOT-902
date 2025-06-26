@@ -1,153 +1,181 @@
 /**
  * @file main.c
- * @brief Main program using LoRa with FreeRTOS.
+ * @brief Main application for LoRa sender (ESP32).
  *
- * This program manages a state machine for LoRa communication,
- * including INIT, ACQUISITION, TRANSMISSION, SLEEPMODE, WAKEUP, and ERROR states.
- * It uses FreeRTOS for task management and delays.
+ * This application acquires sensor data, computes averages, and sends the results via LoRa.
+ * It uses FreeRTOS tasks for sensor acquisition and a state machine for operation flow.
  */
 
 #include <stdio.h>
-#include <inttypes.h>
 #include <string.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/semphr.h"
 #include "esp_log.h"
 #include "lora.h"
 #include "temperature.h"
-#include <math.h>
-#include "sound.h"
 #include "esp_sleep.h"
 #include "esp_system.h"
+#include "sound.h"
 
 /**
- * @brief Function to send a packet using LoRa.
+ * @brief Main application entry point.
  *
- * This function sends a "Hello World" message using the LoRa module.
- * It is currently commented out and can be enabled if needed.
+ * Implements a state machine for sensor acquisition, LoRa transmission, and sleep management.
  */
+void app_main(void) {
+    /**
+     * @enum LoRaState
+     * @brief State machine for LoRa sender logic.
+     */
+    enum LoRaState {
+        INIT,           ///< Initialization state
+        ACQUISITION,    ///< Sensor acquisition state
+        TRANSMISSION,   ///< LoRa transmission state
+        SLEEPMODE,      ///< Deep sleep state
+        WAKEUP,         ///< Wakeup state
+        ERROR           ///< Error state
+    };
 
-/**
- * @brief Main function of the FreeRTOS application.
- *
- * This function implements a state machine to manage
- * the different operating modes of the LoRa module.
- */
-void app_main(void)
-{
-	/**
-	 * @enum LoRaState
-	 * @brief Possible states of the LoRa system.
-	 */
-	enum LoRaState
-	{
-		INIT,
-		ACQUISITION,
-		TRANSMISSION,
-		SLEEPMODE,
-		WAKEUP,
-		ERROR
-	};
+    static RTC_DATA_ATTR enum LoRaState state = INIT;
 
-	// Define a persistent variable in RTC memory
-	static RTC_DATA_ATTR enum LoRaState state = INIT;
+    // Define number of samples (1 per second for 10 seconds)
+    const int sample_count = 10;
 
-	float avg_temperature = 0.0;
-	float avg_pressure = 0.0;
-	float avg_sound_level = 0.0;
-	// float avg_air_quality = 0.0;
+    // Buffers allocated on the stack
+    float temp_buffer[sample_count];
+    float pressure_buffer[sample_count];
+    float humidity_buffer[sample_count];
+    float sound_buffer[sample_count];
 
-	while (1)
-	{
-		switch (state)
-		{
-		case INIT:
-			ESP_LOGE(pcTaskGetName(NULL), "Init mode");
-			if (lora_init() == 0)
-			{
-				ESP_LOGE(pcTaskGetName(NULL), "Does not recognize the LoRa module. Verify the connections and configuration.");
-				state = ERROR;
-			}
-			lora_set_frequency(868e6);
-			temperature_init();
-			sound_init();  // Initialize sound module
-			state = ACQUISITION;
-			break;
-		case ACQUISITION:
-			ESP_LOGE(pcTaskGetName(NULL), "Acquisition mode, waiting for data...");
-			{
-				float temp_sum = 0.0;
-				float pressure_sum = 0.0;
-				// float sound_level_sum = 0.0;
+    // Sensor contexts
+    CapteurContext temp_ctx = {
+        .buffer = temp_buffer,
+        .sample_count = sample_count,
+        .done_semaphore = xSemaphoreCreateBinary(),
+        .start_signal = xSemaphoreCreateBinary()
+    };
 
-				for (int i = 0; i < 10; i++)
-				{
-					temp_sum += temperature_get();
-					pressure_sum += pressure_get();
-					// air_quality_sum += air_quality_get(); 
-					vTaskDelay(pdMS_TO_TICKS(1000));
-				}
+    CapteurContext pressure_ctx = {
+        .buffer = pressure_buffer,
+        .sample_count = sample_count,
+        .done_semaphore = xSemaphoreCreateBinary(),
+        .start_signal = xSemaphoreCreateBinary()
+    };
 
-				avg_temperature = temp_sum / 10.0;
-				avg_pressure = pressure_sum / 10.0;
-				// avg_air_quality = air_quality_sum / 10.0;
-				avg_sound_level = sound_get_average_db();
+    CapteurContext humidity_ctx = {
+        .buffer = humidity_buffer,
+        .sample_count = sample_count,
+        .done_semaphore = xSemaphoreCreateBinary(),
+        .start_signal = xSemaphoreCreateBinary()
+    };
 
-				printf("Moyenne température: %.2f °C\n", avg_temperature);
-				printf("Moyenne pression: %.2f hPa\n", avg_pressure);
-				// printf("Moyenne qualité de l'air: %.2f\n", avg_air_quality);
-				printf("Moyenne niveau sonore: %.2f dB\n", avg_sound_level);
-			}
-			state = TRANSMISSION;
-			break;
-		case TRANSMISSION:
-			ESP_LOGE(pcTaskGetName(NULL), "Transmission mode");
-			{
-				char message[128];
-				snprintf(message, sizeof(message), 
-					"{\"temp\":%.2f,\"press\":%.2f,\"sound\":%.2f}", 
-					avg_temperature, avg_pressure, avg_sound_level);
-				lora_send_packet((uint8_t *)message, strlen(message));
-				ESP_LOGI("TRANSMISSION", "Données envoyées: %s", message);
-			}
-			state = SLEEPMODE;
-			break;
-		case SLEEPMODE:
-			ESP_LOGE(pcTaskGetName(NULL), "Sleep mode");
-			{
-				const int sleep_time_sec = 10; 
-				ESP_LOGI("SLEEPMODE", "Entrée en mode Deep Sleep pour %d secondes", sleep_time_sec);
+    CapteurContext sound_ctx = {
+        .buffer = sound_buffer,
+        .sample_count = sample_count,
+        .done_semaphore = xSemaphoreCreateBinary(),
+        .start_signal = xSemaphoreCreateBinary(),
+    };
 
-				// Save the next state before entering Deep Sleep
-				state = INIT;
+    // Create sensor tasks (now declared in temperature.h)
+    TaskHandle_t temp_task_handle;
+    TaskHandle_t pressure_task_handle;
+    TaskHandle_t humidity_task_handle;
+    TaskHandle_t sound_task_handle;
 
-				// Configure the timer for wakeup
-				esp_sleep_enable_timer_wakeup(sleep_time_sec * 1000000ULL);
+    xTaskCreate(temperature_task, "TempTask", 2048, &temp_ctx, 5, &temp_task_handle);
+    xTaskCreate(pressure_task, "PressureTask", 2048, &pressure_ctx, 5, &pressure_task_handle);
+    xTaskCreate(humidity_task, "HumidityTask", 2048, &humidity_ctx, 5, &humidity_task_handle);
+    xTaskCreate(sound_task, "SoundTask", 2048, &sound_ctx, 5, &sound_task_handle);
 
-				// Enter Deep Sleep mode
-				esp_deep_sleep_start();
-			}
-			break;
-		case WAKEUP:
-			ESP_LOGE(pcTaskGetName(NULL), "Wake up mode");
-			{
-				// Check the reason for wakeup
-				esp_sleep_wakeup_cause_t wakeup_reason = esp_sleep_get_wakeup_cause();
-				if (wakeup_reason == ESP_SLEEP_WAKEUP_TIMER)
-				{
-					ESP_LOGI("WAKEUP", "Réveillé par le timer");
-				}
-				else
-				{
-					ESP_LOGI("WAKEUP", "Réveillé par une autre raison");
-				}
-			}
-			break;
-		case ERROR:
-			ESP_LOGE(pcTaskGetName(NULL), "Error mode");
-			vTaskDelay(pdMS_TO_TICKS(5000));
-			state = INIT;
-			break;
-		}
-	}
+    while (1) {
+        switch (state) {
+        case INIT:
+            ESP_LOGI("STATE", "INIT");
+            if (lora_init() == 0) {
+                ESP_LOGE("LoRa", "LoRa module not detected.");
+                state = ERROR;
+                break;
+            }
+
+            lora_set_frequency(868e6);
+            temperature_init();
+            if (mic_init() != ESP_OK) {
+                ESP_LOGE("mic", "Erreur initialisation microphone");
+            }    
+            state = ACQUISITION;
+            break;
+
+        case ACQUISITION:
+            ESP_LOGI("STATE", "ACQUISITION");
+              
+            // Resume sensor tasks
+            vTaskResume(temp_task_handle);
+            vTaskResume(pressure_task_handle);
+            vTaskResume(humidity_task_handle);
+            vTaskResume(sound_task_handle);
+
+
+            // Trigger synchronized measurements
+            xSemaphoreGive(temp_ctx.start_signal);
+            xSemaphoreGive(pressure_ctx.start_signal);
+            xSemaphoreGive(humidity_ctx.start_signal);
+            xSemaphoreGive(sound_ctx.start_signal);
+
+
+            // Wait for each task to finish
+            xSemaphoreTake(temp_ctx.done_semaphore, portMAX_DELAY);
+            xSemaphoreTake(pressure_ctx.done_semaphore, portMAX_DELAY);
+            xSemaphoreTake(humidity_ctx.done_semaphore, portMAX_DELAY);
+            xSemaphoreTake(sound_ctx.done_semaphore, portMAX_DELAY);
+
+            printf("Average temperature: %.2f°C | Average pressure: %.2f hPa | Average humidity: %.2f%% | Average SPL: %.2f dB SPL\n",
+                   temp_ctx.average, pressure_ctx.average, humidity_ctx.average, sound_ctx.average);
+
+            state = TRANSMISSION;
+            break;
+
+        case TRANSMISSION:
+            ESP_LOGI("STATE", "TRANSMISSION");
+
+            
+            char message[160];
+            snprintf(message, sizeof(message),
+                        "{\"temp\":%.2f,\"press\":%.2f,\"hum\":%.2f,\"sound\":%.2f}",
+                        temp_ctx.average, pressure_ctx.average, humidity_ctx.average, sound_ctx.average);
+            lora_send_packet((uint8_t *)message, strlen(message));
+            ESP_LOGI("LoRa", "Message sent: %s", message);
+            
+
+            state = SLEEPMODE;
+            break;
+
+        case SLEEPMODE:
+            ESP_LOGI("STATE", "SLEEPMODE");
+
+            
+                const int sleep_time_sec = 10;
+                state = INIT;
+                esp_sleep_enable_timer_wakeup(sleep_time_sec * 1000000ULL);
+                esp_deep_sleep_start();
+            
+            break;
+
+        case WAKEUP:
+            ESP_LOGI("STATE", "WAKEUP");
+            
+
+                esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+                ESP_LOGI("WAKEUP", "Wakeup cause: %d", cause);
+            
+            break;
+
+        case ERROR:
+            ESP_LOGE("STATE", "ERROR - restarting in 5 sec");
+            vTaskDelay(pdMS_TO_TICKS(5000));
+            state = INIT;
+            break;
+        
+        }
+    }
 }

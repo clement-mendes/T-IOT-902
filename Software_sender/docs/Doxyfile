@@ -991,7 +991,8 @@ WARN_LOGFILE           =
 # spaces. See also FILE_PATTERNS and EXTENSION_MAPPING
 # Note: If this tag is empty the current directory is searched.
 
-INPUT                  = ../main ../components/example/src
+INPUT= ../main ../components/lora/src  ../components/lora/include ../components/sound/src ../components/sound/include ../components/temperature/src ../components/temperature/include ../components/common/include  ../components/sound/src ../components/sound/include 
+
 
 # This tag can be used to specify the character encoding of the source files
 # that Doxygen parses. Internally Doxygen uses the UTF-8 encoding. Doxygen uses

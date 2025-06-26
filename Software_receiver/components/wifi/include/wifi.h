@@ -20,10 +20,12 @@
 
 /**
  * @brief Initializes the Wi-Fi in station mode.
- * 
- * This function sets up the ESP32 to connect to a Wi-Fi network
- * using the SSID and password defined in the configuration.
  */
 void wifi_init_sta(void);
+
+/**
+ * @brief Returns true if the ESP32 is connected to Wi-Fi, false otherwise.
+ */
+bool wifi_is_connected(void);
 
 #endif // WIFI_H
