@@ -1,0 +1,13 @@
+idf_component_register(
+    SRCS 
+        "src/test_sound.c"
+        "src/test_temperature.c"
+        "src/test_lora.c"
+    INCLUDE_DIRS 
+        "include"
+    REQUIRES 
+        sound
+        temperature
+        lora
+        unity
+) 
