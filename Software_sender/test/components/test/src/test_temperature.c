@@ -14,11 +14,6 @@ void setUp_temperature(void)
     temperature_init();
 }
 
-void tearDown_temperature(void)
-{
-    // Rien à nettoyer
-}
-
 void test_temperature_init(void)
 {
     temperature_init();

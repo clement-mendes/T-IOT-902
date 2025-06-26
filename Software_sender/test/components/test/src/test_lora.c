@@ -9,11 +9,6 @@
 
 static int tests_passed = 0;
 
-void setUp_lora(void)
-{
-    // Ne pas initialiser ici, on le fait dans le test
-}
-
 void tearDown_lora(void)
 {
     lora_close();
@@ -21,25 +16,25 @@ void tearDown_lora(void)
 
 void test_lora_init(void)
 {
-    // S'assurer que le module est fermé avant de commencer
+    // Make sure the module is closed before starting
     lora_close();
     
-    // Attendre un peu pour s'assurer que le module est bien réinitialisé
+    // Wait a bit to ensure the module is properly reset
     vTaskDelay(pdMS_TO_TICKS(100));
     
-    // Tenter l'initialisation
+    // Try initialization
     int result = lora_init();
     
-    // Vérifier le résultat
-    if (result != 0) {
-        printf("Échec de l'initialisation LoRa (code: %d)\n", result);
-        printf("Vérifiez que :\n");
-        printf("1. Le module LoRa est correctement connecté\n");
-        printf("2. Les broches SPI sont correctement configurées\n");
-        printf("3. L'alimentation du module est stable\n");
+    // Check the result
+    if (result != 1) {
+        printf("LoRa initialization failed (code: %d)\n", result);
+        printf("Check that:\n");
+        printf("1. The LoRa module is properly connected\n");
+        printf("2. The SPI pins are correctly configured\n");
+        printf("3. The module power supply is stable\n");
     }
     
-    TEST_ASSERT_EQUAL(0, result);
+    TEST_ASSERT_EQUAL(1, result);
     printf("Test %s PASSED\n", __func__);
     tests_passed++;
 }
@@ -54,7 +49,7 @@ void test_lora_send(void)
 
 void test_lora_receive(void)
 {
-    // Vérifier si un paquet a été perdu
+    // Check if a packet was lost
     int lost = lora_packet_lost();
     TEST_ASSERT_GREATER_OR_EQUAL(0, lost);
     printf("Test %s PASSED\n", __func__);
@@ -63,13 +58,13 @@ void test_lora_receive(void)
 
 void test_lora_config(void)
 {
-    // Test de la configuration LoRa
+    // Test LoRa configuration
     lora_set_frequency(868000000);  // 868 MHz
     lora_set_spreading_factor(7);
     lora_set_bandwidth(125000);     // 125 kHz
     lora_set_coding_rate(5);        // 4/5
     lora_set_tx_power(14);          // dBm
-    lora_enable_crc();              // Activer CRC
+    lora_enable_crc();              // Enable CRC
     
     printf("Test %s PASSED\n", __func__);
     tests_passed++;

@@ -14,10 +14,6 @@ void setUp_sound(void)
     sound_init();
 }
 
-void tearDown_sound(void)
-{
-    // Rien à nettoyer
-}
 
 void test_sound_init(void)
 {
